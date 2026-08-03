@@ -1,0 +1,54 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
+[application]
+
+config/name="MineDriller"
+config/description="Drill deep, manage heat, collect ores, upgrade, go deeper. Based on the GDD by Dhairya Sheel Rawal."
+config/version="1.0.0"
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+run/max_fps=60
+config/icon="res://icon.png"
+
+[audio]
+
+buses/default_bus_layout=""
+
+[autoload]
+
+Balance="*res://scripts/autoload/balance.gd"
+Events="*res://scripts/autoload/events.gd"
+SettingsManager="*res://scripts/autoload/settings_manager.gd"
+GameState="*res://scripts/autoload/game_state.gd"
+SaveManager="*res://scripts/autoload/save_manager.gd"
+AudioManager="*res://scripts/autoload/audio_manager.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

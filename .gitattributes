@@ -1,0 +1,23 @@
+# Normalise line endings so Windows, macOS and Linux collaborators don't
+# produce whole-file diffs every time they save.
+* text=auto eol=lf
+
+# Godot / project text formats
+*.gd        text eol=lf
+*.gdshader  text eol=lf
+*.tscn      text eol=lf
+*.tres      text eol=lf
+*.godot     text eol=lf
+*.import    text eol=lf
+*.uid       text eol=lf
+*.cfg       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.py        text eol=lf
+
+# Binary assets: never touch these
+*.png binary
+*.wav binary
+*.ogg binary
+*.ttf binary
+*.keystore binary

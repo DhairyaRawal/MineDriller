@@ -1,0 +1,18 @@
+Change
+Details
+
+Drill Visual Rotation, Also Ensure Going up becomes easier. 
+The drill should show rotation when moving left right, diagonal, up down, this would help with Player Experience. 
+
+Water physics 
+Water should not stay in a square tile, it should fall down if drilled under it, or go sideways if there is an opening on the side
+
+Not to pickup ores when cargo is full 
+The driller tends to pick up ores even when the cargo is full, there should be an Inventory system to drop ores at safe spots or whenever.
+
+A save mechanic 
+Once saved, the player should spawn back at the last position and all the drill path should be the same, the upgrades and cargo should be the same. In the UI there should also be a New Drilling (new game) option to the player.
+
+A map on the HUD
+The player should be able to open map, and see where all they have visited, undiscovered areas should be under FOG of War. 
+

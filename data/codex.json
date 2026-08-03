@@ -1,0 +1,238 @@
+{
+  "_comment": "Educational content. Facts are real and sourced from geology/metallurgy references; wording is pitched at roughly ages 8-13. 'wow' lines are the hook shown largest on a Discovery Card. Quiz questions test the fact the player was actually shown, so the quiz is retrieval practice rather than trivia.",
+
+  "ores": {
+    "iron": {
+      "title": "Iron",
+      "symbol": "Fe",
+      "tagline": "The metal that built the modern world.",
+      "what": "A tough grey metal, and the most common element on Earth by mass.",
+      "forms": "Most of Earth's iron sank to the core while the planet was still molten. The iron we can actually mine was laid down in ancient seas about 2.4 billion years ago, when oxygen made by the first living things turned dissolved iron into rust that settled in stripey layers.",
+      "where": "Australia, Brazil, India and China mine the most.",
+      "uses": "Mixed with carbon it becomes steel: bridges, railways, cars, skyscrapers and tools.",
+      "wow": "There is iron inside you. Your blood uses it to carry oxygen, and that is what makes blood red.",
+      "quiz": [
+        {
+          "q": "What does iron become when it is mixed with carbon?",
+          "options": ["Steel", "Bronze", "Glass"],
+          "answer": 0,
+          "note": "Steel is iron plus a little carbon, which makes it much stronger."
+        },
+        {
+          "q": "Why is your blood red?",
+          "options": ["It carries iron", "It carries gold", "It carries silver"],
+          "answer": 0,
+          "note": "Haemoglobin uses iron to carry oxygen around your body."
+        }
+      ]
+    },
+
+    "silver": {
+      "title": "Silver",
+      "symbol": "Ag",
+      "tagline": "The shiniest metal there is.",
+      "what": "A bright white metal that reflects more light than any other metal.",
+      "forms": "Hot, acidic water circulates underground near volcanoes and dissolves silver out of the rock. When that water reaches cooler rock it cannot hold the silver any more, so it leaves it behind in cracks as veins.",
+      "where": "Peru, Mexico, Bolivia, China and Poland.",
+      "uses": "Mirrors, solar panels, electronics, and even bandages, because silver kills germs.",
+      "wow": "Silver carries electricity better than any other metal on Earth, better than copper and better than gold.",
+      "quiz": [
+        {
+          "q": "Which metal carries electricity best?",
+          "options": ["Silver", "Gold", "Iron"],
+          "answer": 0,
+          "note": "Silver is the best electrical conductor of all the metals."
+        },
+        {
+          "q": "Where does silver collect underground?",
+          "options": ["In cracks, as veins", "In round balls", "In flat sheets"],
+          "answer": 0,
+          "note": "Hot water deposits silver in cracks, forming veins."
+        }
+      ]
+    },
+
+    "gold": {
+      "title": "Gold",
+      "symbol": "Au",
+      "tagline": "Older than the Earth itself.",
+      "what": "A soft, heavy, yellow metal that never rusts or tarnishes.",
+      "forms": "Gold is not made on Earth. It is forged when neutron stars crash into each other and when huge stars explode. The gold in our planet arrived with the dust that formed it, then superheated fluids pushed it up into cracks in the rock.",
+      "where": "South Africa, Australia, China, Peru and the United States.",
+      "uses": "Jewellery, spacecraft visors, dentistry, and electronic contacts that must never corrode.",
+      "wow": "Every single gold atom on Earth is older than Earth. It was made in space before our planet existed.",
+      "quiz": [
+        {
+          "q": "Where was Earth's gold originally made?",
+          "options": ["In exploding stars", "In volcanoes", "In the ocean"],
+          "answer": 0,
+          "note": "Gold forms in neutron star collisions and supernovae, out in space."
+        },
+        {
+          "q": "Why is gold used in electronics and spacecraft?",
+          "options": ["It never corrodes", "It is magnetic", "It is very light"],
+          "answer": 0,
+          "note": "Gold does not rust or tarnish, so contacts keep working."
+        }
+      ]
+    },
+
+    "emerald": {
+      "title": "Emerald",
+      "symbol": "Be₃Al₂Si₆O₁₈",
+      "tagline": "Rarer than diamond.",
+      "what": "The deep green form of a mineral called beryl.",
+      "forms": "An emerald needs two ingredients that almost never meet: beryllium, which sits in the crust, and chromium, which sits much deeper. Only where hot fluids near granite drag them together can emeralds grow, which is why they are so rare.",
+      "where": "Colombia is the most famous source, then Zambia and Brazil.",
+      "uses": "Almost entirely gemstones. Ancient Egyptians also ground them into pigment.",
+      "wow": "Good emeralds are rarer than diamonds, because the two elements that make them hardly ever end up in the same place.",
+      "quiz": [
+        {
+          "q": "Which element gives emerald its green colour?",
+          "options": ["Chromium", "Copper", "Carbon"],
+          "answer": 0,
+          "note": "Chromium turns beryl green and makes it an emerald."
+        },
+        {
+          "q": "Which country is most famous for emeralds?",
+          "options": ["Colombia", "Iceland", "Japan"],
+          "answer": 0,
+          "note": "Colombian emeralds are prized for their vivid green."
+        }
+      ]
+    },
+
+    "ruby": {
+      "title": "Ruby",
+      "symbol": "Al₂O₃",
+      "tagline": "The gem that made the first laser.",
+      "what": "The red form of corundum, the second hardest natural mineral after diamond.",
+      "forms": "Aluminium-rich rock such as marble gets buried, squeezed and cooked deep underground. As it recrystallises, a trace of chromium slips into the structure and turns the crystal red.",
+      "where": "Myanmar, Mozambique, Thailand and Madagascar.",
+      "uses": "Gemstones, hard-wearing bearings in watches, and lasers.",
+      "wow": "Ruby and sapphire are the exact same mineral. Chromium makes it red, iron and titanium make it blue.",
+      "quiz": [
+        {
+          "q": "Ruby and sapphire are...",
+          "options": ["The same mineral", "Totally unrelated", "Both man-made"],
+          "answer": 0,
+          "note": "Both are corundum. Only the trace elements differ."
+        },
+        {
+          "q": "How hard is ruby compared to other minerals?",
+          "options": ["Second only to diamond", "Softer than chalk", "The softest gem"],
+          "answer": 0,
+          "note": "Corundum is 9 on the Mohs scale; diamond is 10."
+        }
+      ]
+    },
+
+    "opal": {
+      "title": "Black Opal",
+      "symbol": "SiO₂·nH₂O",
+      "tagline": "It holds trapped water and a rainbow.",
+      "what": "Not a crystal at all. Opal is millions of microscopic silica spheres stacked in a neat grid, with water trapped between them.",
+      "forms": "Silica-rich water trickles into cracks and cavities and slowly leaves behind tiny spheres of silica. If those spheres happen to stack evenly, the opal flashes colour. It can take millions of years.",
+      "where": "Australia produces most of the world's opal. Lightning Ridge is famous for black opal. Ethiopia and Mexico also mine it.",
+      "uses": "Gemstones, and it is the birthstone for October.",
+      "wow": "Opal's colours are not paint or pigment. The tiny spheres split light like a prism, which is why the colour moves as you tilt it.",
+      "quiz": [
+        {
+          "q": "Why does opal flash with colour?",
+          "options": [
+            "Tiny spheres split the light",
+            "It is painted inside",
+            "It glows in the dark"
+          ],
+          "answer": 0,
+          "note": "Stacked silica spheres diffract light. This is called play-of-colour."
+        },
+        {
+          "q": "Which country produces most of the world's opal?",
+          "options": ["Australia", "Canada", "Egypt"],
+          "answer": 0,
+          "note": "Australia, especially Lightning Ridge for black opal."
+        }
+      ]
+    }
+  },
+
+  "layers": {
+    "1": {
+      "title": "The Crust",
+      "fact": "The thin rocky shell we live on. Under the oceans it is only about 5 km thick; under mountains it can reach 70 km. Compared to the whole Earth it is thinner than an apple's skin.",
+      "quiz": [
+        {
+          "q": "How thick is Earth's crust under the oceans?",
+          "options": ["About 5 km", "About 500 km", "About 5000 km"],
+          "answer": 0,
+          "note": "Oceanic crust is thin. Continental crust is much thicker."
+        }
+      ]
+    },
+    "2": {
+      "title": "The Upper Mantle",
+      "fact": "Hot rock that flows incredibly slowly, about as fast as your fingernails grow. This slow motion drags the plates of the crust around, which builds mountains and causes earthquakes.",
+      "quiz": [
+        {
+          "q": "What does the slowly flowing mantle cause at the surface?",
+          "options": [
+            "Moving plates and earthquakes",
+            "The tides",
+            "The seasons"
+          ],
+          "answer": 0,
+          "note": "Mantle convection drives plate tectonics."
+        }
+      ]
+    },
+    "3": {
+      "title": "The Lower Mantle",
+      "fact": "Even hotter than the upper mantle, but squeezed so hard by the weight above that it stays solid. Pressure here is more than a million times the air pressure at the surface.",
+      "quiz": [
+        {
+          "q": "Why is the lower mantle solid even though it is hotter?",
+          "options": [
+            "Enormous pressure",
+            "It is actually cold",
+            "It is made of ice"
+          ],
+          "answer": 0,
+          "note": "Pressure raises the melting point, keeping it solid."
+        }
+      ]
+    },
+    "4": {
+      "title": "The Outer Core",
+      "fact": "A vast ocean of liquid iron and nickel. As it churns it generates Earth's magnetic field, which is what makes a compass point north and shields us from solar radiation.",
+      "quiz": [
+        {
+          "q": "What does the churning liquid outer core create?",
+          "options": [
+            "Earth's magnetic field",
+            "Earth's gravity",
+            "Earth's atmosphere"
+          ],
+          "answer": 0,
+          "note": "Moving liquid metal generates the geodynamo."
+        }
+      ]
+    },
+    "5": {
+      "title": "The Inner Core",
+      "fact": "A solid ball of iron about as hot as the surface of the Sun, roughly 5,200°C. It stays solid because the pressure is crushing, and it is slowly growing as Earth cools.",
+      "quiz": [
+        {
+          "q": "The inner core is about as hot as...",
+          "options": [
+            "The surface of the Sun",
+            "A hot oven",
+            "Boiling water"
+          ],
+          "answer": 0,
+          "note": "Around 5,200°C, comparable to the Sun's surface."
+        }
+      ]
+    }
+  }
+}

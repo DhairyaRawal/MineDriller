@@ -1,0 +1,32 @@
+# Godot
+.godot/
+build/
+*.translation
+
+# Secrets - never commit these
+.env
+*.env
+!.env.example
+
+# Third-party research code (Meta TRIBE v2) is CC BY-NC 4.0 NonCommercial.
+# Redistributing it here would put a non-commercial licence next to a game we
+# may want to ship. Keep it local.
+TRIBE V2/
+
+# Unrelated git practice folders (they contain their own nested .git repos,
+# which would break this one).
+learngit/
+
+# Local editor state
+export_credentials.cfg
+*.keystore
+
+# Local Claude Code environment settings (machine-specific paths/permissions)
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Python
+__pycache__/
