@@ -245,7 +245,12 @@ func _round_cave_edges(chunk: int, img: Image) -> void:
 	for y in chunk_h:
 		for x in width:
 			var cell := Vector2i(x, row_start + y)
-			if int(cell_info(cell)["type"]) != TileType.EMPTY or cell.y <= 1:
+			var cell_type := int(cell_info(cell)["type"])
+			# WATER is rounded the same as EMPTY: now that water is a
+			# dynamic per-pixel layer rather than a static painted tile, the
+			# rock bordering a water pocket should look like a natural dent,
+			# not a grid square.
+			if (cell_type != TileType.EMPTY and cell_type != TileType.WATER) or cell.y <= 1:
 				continue
 			var has_solid_neighbor := false
 			for offset: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
@@ -289,8 +294,14 @@ func _atlas_for(info: Dictionary) -> Vector2i:
 			return Vector2i(int(Balance.ores[info["ore_id"]]["atlas_col"]), 2)
 		TileType.MAGMA:
 			return Vector2i(5, 1)
-		TileType.WATER:
-			return Vector2i(6, 1)
+		# WATER is deliberately absent: it falls through to the same "-1,-1 /
+		# don't paint" default as EMPTY. Water is rendered entirely by the
+		# dynamic per-pixel water layer (see "water simulation" section) --
+		# if the base terrain image also painted a static water tile here, it
+		# would sit there permanently (carve_circle skips WATER cells, so
+		# this layer never erodes) and mask the flowing layer drawn on top of
+		# it, making the whole simulation invisible regardless of whether it
+		# actually ran correctly.
 		TileType.BEDROCK:
 			return Vector2i(5, 0)
 		TileType.GRASS:
