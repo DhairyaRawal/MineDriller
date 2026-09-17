@@ -1,0 +1,91 @@
+{
+  "_comment": "Contextual '?' tips. 'priority': lower = more urgent; when several are nearby only the 3 most urgent are shown. Order within each category is the order in the pause-menu GUIDE. Enemy kinds not listed here fall back through 'aliases'.",
+  "categories": ["Dangers", "Resources", "Getting around"],
+  "aliases": {
+    "govt_boss": "govt",
+    "crawly_elite": "crawly",
+    "zombie_elite": "zombie"
+  },
+  "tips": {
+    "govt": {
+      "category": "Dangers", "priority": 1,
+      "title": "Government Driller",
+      "body": "Touching one confiscates your whole cargo instantly - no amount of Hull protects you. You can't fight it, so keep your distance and route around it."
+    },
+    "magma": {
+      "category": "Dangers", "priority": 2,
+      "title": "Magma",
+      "body": "Touching it burns 1 Hull and spikes your heat by 35 at once. Never drill into it."
+    },
+    "magma_slug": {
+      "category": "Dangers", "priority": 3,
+      "title": "Magma Slug",
+      "body": "Harmless to touch, but it heats your drill from a distance. Get out of its range quickly - waiting beside it will overheat you."
+    },
+    "heat": {
+      "category": "Dangers", "priority": 4,
+      "title": "Drill heat",
+      "body": "Drilling heats your drill and stopping cools it. At 100 it blows and you lose your cargo. The shaded part of the bar is heat you can't cool below, and it grows the deeper you go."
+    },
+    "rock_golem": {
+      "category": "Dangers", "priority": 5,
+      "title": "Rock Golem",
+      "body": "Slow, but it hits for 2 Hull and blocks tunnels. Find another way round instead of squeezing past."
+    },
+    "zombie": {
+      "category": "Dangers", "priority": 6,
+      "title": "Zombie Miner",
+      "body": "Chases you once you get close, and costs Hull on contact. Retreat up a ramp - they're poor at climbing."
+    },
+    "crystal_bat": {
+      "category": "Dangers", "priority": 7,
+      "title": "Crystal Bat",
+      "body": "Fast, erratic and airborne, so it's hard to dodge. It costs Hull on contact - don't linger near one."
+    },
+    "crawly": {
+      "category": "Dangers", "priority": 8,
+      "title": "Creepy Crawly",
+      "body": "Patrols back and forth and turns at ledges. It costs Hull on contact, so time your pass or go around."
+    },
+    "cargo_full": {
+      "category": "Resources", "priority": 9,
+      "title": "Cargo full",
+      "body": "Richer ore still swaps in, knocking out your cheapest. Anything worth less than your cheapest ore is lost. Sell at the surface or bank at a depot soon."
+    },
+    "water": {
+      "category": "Resources", "priority": 10,
+      "title": "Water pocket",
+      "body": "Touch water for an instant cool-down. It flows, too: drill underneath and it falls, open a side and it spreads."
+    },
+    "depot": {
+      "category": "Resources", "priority": 11,
+      "title": "Safe-spot depot",
+      "body": "Bank ore here and a bust can't take it - but banked ore still has to be carried to the surface to sell. Reaching a depot also restocks your rockets."
+    },
+    "chest": {
+      "category": "Resources", "priority": 12,
+      "title": "Treasure vault",
+      "body": "Drill into the chest for a handful of ore, some money, and sometimes ether."
+    },
+    "shop": {
+      "category": "Resources", "priority": 13,
+      "title": "The Shop",
+      "body": "Spend your money on upgrades here. The Drill Bit unlocks deeper layers; every other upgrade makes each dive more efficient."
+    },
+    "hard_rock": {
+      "category": "Getting around", "priority": 14,
+      "title": "Rock too hard",
+      "body": "Your Drill Bit can't cut this rock. Buy the next Drill Bit level at the Shop - each level opens the next layer of the Earth."
+    },
+    "climb": {
+      "category": "Getting around", "priority": 15,
+      "title": "Climbing out",
+      "body": "You can't drill straight up. Hold UP and push into a wall to carve a rising ramp, or press R to fire a rocket that blasts a shaft upward."
+    },
+    "map": {
+      "category": "Getting around", "priority": 99,
+      "title": "The map",
+      "body": "Click MAP to see everywhere you've explored. Unexplored ground stays dark, and depots only appear once you've found them."
+    }
+  }
+}

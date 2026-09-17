@@ -2,7 +2,7 @@
   "world": {
     "tile_px": 64,
     "km_per_tile": 25.0,
-    "width_tiles": 32,
+    "width_tiles": 56,
     "max_depth_row": 360,
     "chunk_h": 16,
     "cave_threshold": 0.62,
@@ -67,7 +67,12 @@
     "hull_base": 3,
     "hull_per_level": 1,
     "invuln_after_hit_sec": 1.2,
-    "fall_damage_speed": 950.0
+    "fall_damage_speed": 950.0,
+    "rockets_base": 5,
+    "rockets_per_level": 2,
+    "rocket_range_tiles": 8.0,
+    "rocket_step_px": 22.0,
+    "rocket_carve_radius": 34.0
   },
   "upgrades": {
     "drill_speed": {"name": "Drill Motor", "max_level": 6, "base_cost": 60,  "cost_mult": 2.3,
@@ -81,7 +86,9 @@
     "hull":        {"name": "Hull",        "max_level": 6, "base_cost": 70,  "cost_mult": 2.2,
                     "desc": "Survive more hits from hazards and enemies."},
     "mobility":    {"name": "Treads",      "max_level": 6, "base_cost": 60,  "cost_mult": 2.2,
-                    "desc": "Move, jump and climb carved ramps faster."}
+                    "desc": "Move, jump and climb carved ramps faster."},
+    "rockets":     {"name": "Rocket Bay",  "max_level": 6, "base_cost": 90,  "cost_mult": 2.2,
+                    "desc": "Carry more escape rockets. Refilled free at the surface."}
   },
   "enemies": {
     "crawly": {"name": "Creepy Crawly",     "min_layer": 1, "speed": 70.0,  "damage": 1, "chase_range": 0.0},

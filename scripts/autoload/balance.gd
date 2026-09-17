@@ -25,6 +25,10 @@ var cosmetics: Dictionary
 var codex: Dictionary = {}
 var codex_ores: Dictionary = {}
 var codex_layers: Dictionary = {}
+# Contextual "?" tips, separate for the same reason as the codex: it's copy.
+var tips: Dictionary = {}             # tip id -> {category, priority, title, body}
+var tip_categories: Array = []
+var tip_aliases: Dictionary = {}      # enemy kind -> tip id (elites share a tip)
 
 
 func _ready() -> void:
@@ -34,6 +38,7 @@ func _ready() -> void:
 	assert(parsed is Dictionary, "balance.json is not valid JSON")
 	data = parsed
 	_load_codex()
+	_load_tips()
 	world = data["world"]
 	layers = data["layers"]
 	ores = data["ores"]
@@ -60,6 +65,27 @@ func _load_codex() -> void:
 	codex = parsed
 	codex_ores = codex.get("ores", {})
 	codex_layers = codex.get("layers", {})
+
+
+func _load_tips() -> void:
+	var f := FileAccess.open("res://data/tips.json", FileAccess.READ)
+	if f == null:
+		push_warning("tips.json missing - contextual tips disabled")
+		return
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	if parsed is not Dictionary:
+		push_warning("tips.json is not valid JSON")
+		return
+	tips = parsed.get("tips", {})
+	tip_categories = parsed.get("categories", [])
+	tip_aliases = parsed.get("aliases", {})
+
+
+## The tip for an enemy kind, following aliases (elites share their base
+## enemy's tip). Returns "" when the kind has no tip.
+func tip_for_enemy(kind: String) -> String:
+	var id := String(tip_aliases.get(kind, kind))
+	return id if tips.has(id) else ""
 
 
 ## Educational entry for an ore, or {} if none is authored.

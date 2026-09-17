@@ -9,7 +9,7 @@ var money := 0
 var ether := 0
 var upgrade_levels := {
 	"drill_speed": 1, "drill_bit": 1, "cooling": 1,
-	"cargo": 1, "hull": 1, "mobility": 1,
+	"cargo": 1, "hull": 1, "mobility": 1, "rockets": 1,
 }
 var stats := {
 	"total_earned": 0, "dives": 0, "busts": 0, "ores_mined": 0,
@@ -17,6 +17,7 @@ var stats := {
 	"enemies_escaped": 0, "clean_dive_streak": 0,
 }
 var codex_discovered: Array = []       # ore ids seen at least once
+var tips_seen: Array = []              # tip ids whose floating '?' the player has already read
 var achievements_unlocked: Array = []  # achievement ids
 var tutorial_done := false
 var daily_best := {}                   # date string -> best money in one dive
@@ -34,12 +35,22 @@ var trail_effect_selected := "default"
 # ---- current run ----
 var cargo: Array = []                  # array of ore id strings
 var run_earn_preview := 0              # $ value of current cargo
+var rockets := 0                       # escape rockets left this dive; refilled at the surface
 var daily_mode := false
+
+# ---- first-time user experience ----
+## True while the tutorial level is running. The tutorial plays on a SANDBOX
+## copy of the player's state, never the real one: see begin_ftue().
+var ftue_mode := false
+var _ftue_restore := {}                # the real state, snapshotted on entry
 
 
 func _ready() -> void:
 	if world_seed == 0:
 		world_seed = randi()
+	# Autoload order puts Balance ahead of GameState, so this is safe here.
+	# A save loading afterwards overwrites it in from_dict().
+	rockets = max_rockets()
 	set_process(true)
 
 
@@ -73,6 +84,33 @@ func cargo_capacity() -> int:
 func max_hull() -> int:
 	var p := Balance.player
 	return int(p["hull_base"]) + int(p["hull_per_level"]) * (int(upgrade_levels["hull"]) - 1)
+
+
+func max_rockets() -> int:
+	var p := Balance.player
+	return int(p["rockets_base"]) \
+		+ int(p["rockets_per_level"]) * (int(upgrade_levels["rockets"]) - 1)
+
+
+## Spend one escape rocket. False if the bay is empty.
+func use_rocket() -> bool:
+	if rockets <= 0:
+		return false
+	rockets -= 1
+	Events.rockets_changed.emit(rockets, max_rockets())
+	SaveManager.request_save()
+	return true
+
+
+## Rockets are a per-dive resource, not a purchase: surfacing refills them.
+func refill_rockets() -> void:
+	var cap := max_rockets()
+	if rockets >= cap:
+		rockets = cap
+		return
+	rockets = cap
+	Events.rockets_changed.emit(rockets, cap)
+	SaveManager.request_save()
 
 
 func cool_rate() -> float:
@@ -109,12 +147,25 @@ func add_ether(amount: int) -> void:
 	Events.ether_changed.emit(ether)
 
 
+## Collect an ore. With room in the bay it is simply added. With a FULL bay
+## the ore replaces the least valuable thing aboard, provided it actually
+## beats it -- so a full cargo keeps upgrading itself instead of locking the
+## player out of every vein they find. The ore that loses the comparison is
+## erased, not dropped. Returns whether the ore ended up in the bay.
 func try_collect_ore(ore_id: String) -> bool:
+	var value := int(Balance.ores[ore_id]["value"])
 	if cargo.size() >= cargo_capacity():
-		Events.cargo_full.emit()
-		return false
+		var worst_idx := _cheapest_cargo_index()
+		# Ties don't swap: trading iron for iron is pure churn.
+		if worst_idx < 0 or int(Balance.ores[String(cargo[worst_idx])]["value"]) >= value:
+			Events.cargo_full.emit()
+			return false
+		var removed_id := String(cargo[worst_idx])
+		cargo.remove_at(worst_idx)
+		run_earn_preview -= int(Balance.ores[removed_id]["value"])
+		Events.ore_swapped.emit(ore_id, removed_id)
 	cargo.append(ore_id)
-	run_earn_preview += int(Balance.ores[ore_id]["value"])
+	run_earn_preview += value
 	stats["ores_mined"] = int(stats["ores_mined"]) + 1
 	unlock_achievement("first_ore")
 	if ore_id == "opal":
@@ -123,6 +174,18 @@ func try_collect_ore(ore_id: String) -> bool:
 	Events.ore_collected.emit(ore_id)
 	Events.cargo_changed.emit(cargo.size(), cargo_capacity())
 	return true
+
+
+## Index of the least valuable ore currently aboard, or -1 if the bay is empty.
+func _cheapest_cargo_index() -> int:
+	var best := -1
+	var best_value := 0
+	for i in cargo.size():
+		var v := int(Balance.ores[String(cargo[i])]["value"])
+		if best < 0 or v < best_value:
+			best = i
+			best_value = v
+	return best
 
 
 func sell_cargo() -> void:
@@ -364,12 +427,105 @@ func start_new_drilling() -> void:
 	cargo.clear()
 	run_earn_preview = 0
 	depot_storage = {}
+	rockets = max_rockets()
+	SaveManager.request_save()
+
+
+# ---------------------------------------------------------- contextual tips
+
+## Retire a tip's floating '?'. Keyed by tip id, not by instance, so reading the
+## water tip once retires the '?' over every water pocket in the world -- and
+## reading an enemy's tip also covers its elite variant, which shares the id.
+## The tip itself stays readable in the pause menu's GUIDE.
+func mark_tip_seen(id: String) -> void:
+	if id == "" or id in tips_seen:
+		return
+	tips_seen.append(id)
+	SaveManager.request_save()
+
+
+func is_tip_seen(id: String) -> bool:
+	return id in tips_seen
+
+
+# ------------------------------------------------ first-time user experience
+
+## Whether this run's world state (dug tunnels, position) should be saved.
+## Daily Challenges and the tutorial are both throwaway worlds.
+func persists_world() -> bool:
+	return not daily_mode and not ftue_mode
+
+
+## Enter the tutorial on a sandbox copy of the player's state.
+##
+## The real state is snapshotted first and restored in finish_ftue(). This is
+## what makes a MANDATORY tutorial safe: a returning player whose save predates
+## the tutorial (tutorial_done == false, but real money or a dive in progress)
+## would otherwise have that progress overwritten by the tutorial's 0$ start.
+func begin_ftue() -> void:
+	_ftue_restore = to_dict()
+	ftue_mode = true
+	daily_mode = false
+	money = 0
+	cargo.clear()
+	run_earn_preview = 0
+	for id: String in upgrade_levels:
+		upgrade_levels[id] = 1
+	rockets = max_rockets()
+
+
+## Walk away from an unfinished tutorial (quit to menu). Restores the real
+## state and grants nothing; the next run starts the tutorial over.
+func abandon_ftue() -> void:
+	if not ftue_mode:
+		return
+	var restore := _ftue_restore
+	ftue_mode = false
+	_ftue_restore = {}
+	from_dict(restore)
+
+
+## Leave the tutorial: restore the real state, then apply what it earns.
+##
+## Carried over: the Drill Bit Lv2 the tutorial is built around, plus anything
+## *learned* -- codex entries, achievements and tips already read -- so a
+## Discovery Card or a '?' seen in the tutorial doesn't pop up a second time
+## in the real game. Everything economic from the sandbox (money, cargo,
+## stats) is discarded.
+func finish_ftue() -> void:
+	if not ftue_mode:
+		return
+	var learned_codex := codex_discovered.duplicate()
+	var learned_awards := achievements_unlocked.duplicate()
+	var learned_tips := tips_seen.duplicate()
+	var restore := _ftue_restore
+	ftue_mode = false
+	_ftue_restore = {}
+	from_dict(restore)
+
+	upgrade_levels["drill_bit"] = maxi(int(upgrade_levels["drill_bit"]), 2)
+	for ore_id in learned_codex:
+		if ore_id not in codex_discovered:
+			codex_discovered.append(ore_id)
+	for award_id in learned_awards:
+		if award_id not in achievements_unlocked:
+			achievements_unlocked.append(award_id)
+	for tip_id in learned_tips:
+		if tip_id not in tips_seen:
+			tips_seen.append(tip_id)
+	tutorial_done = true
+	rockets = max_rockets()
 	SaveManager.request_save()
 
 
 # ------------------------------------------------------------ serialization
 
 func to_dict() -> Dictionary:
+	# Mid-tutorial, the live fields are a sandbox. SaveManager autosaves on a
+	# timer and on app backgrounding, so without this, quitting during the
+	# tutorial would persist 0$ over the player's real progress.
+	if ftue_mode:
+		return _ftue_restore.duplicate(true)
 	# Deep-duplicate containers so the snapshot can never be mutated by
 	# later changes to live state (or vice versa).
 	return {
@@ -378,6 +534,7 @@ func to_dict() -> Dictionary:
 		"upgrade_levels": upgrade_levels.duplicate(true),
 		"stats": stats.duplicate(true),
 		"codex_discovered": codex_discovered.duplicate(true),
+		"tips_seen": tips_seen.duplicate(),
 		"achievements_unlocked": achievements_unlocked.duplicate(true),
 		"tutorial_done": tutorial_done,
 		"daily_best": daily_best.duplicate(true),
@@ -385,6 +542,7 @@ func to_dict() -> Dictionary:
 		"world_diff": world_diff.duplicate(true),
 		"last_position": [last_position.x, last_position.y],
 		"cargo": cargo.duplicate(),
+		"rockets": rockets,
 		"depot_storage": depot_storage.duplicate(true),
 		"drill_skin_owned": drill_skin_owned.duplicate(),
 		"drill_skin_selected": drill_skin_selected,
@@ -404,6 +562,7 @@ func from_dict(d: Dictionary) -> void:
 		if s.has(key):
 			stats[key] = s[key]
 	codex_discovered = (d.get("codex_discovered", []) as Array).duplicate()
+	tips_seen = (d.get("tips_seen", []) as Array).duplicate()
 	achievements_unlocked = (d.get("achievements_unlocked", []) as Array).duplicate()
 	tutorial_done = bool(d.get("tutorial_done", false))
 	daily_best = (d.get("daily_best", {}) as Dictionary).duplicate()
@@ -414,6 +573,8 @@ func from_dict(d: Dictionary) -> void:
 	var pos_arr: Array = d.get("last_position", [])
 	last_position = Vector2(float(pos_arr[0]), float(pos_arr[1])) if pos_arr.size() >= 2 else Vector2.ZERO
 	cargo = (d.get("cargo", []) as Array).duplicate()
+	# Clamped in case a Rocket Bay level was lost to a reset or an older save.
+	rockets = clampi(int(d.get("rockets", max_rockets())), 0, max_rockets())
 	depot_storage = (d.get("depot_storage", {}) as Dictionary).duplicate(true)
 	# Recomputed rather than saved separately, so it can never drift from cargo.
 	run_earn_preview = 0

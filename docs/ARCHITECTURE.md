@@ -55,9 +55,11 @@ sets (mined cells, carved-past-threshold cells, opened chests). Order of evaluat
 10. Hard-rock scatter roll → hard (tier = layer id).
 11. Otherwise soft rock.
 
-**Streaming**: the world is 32×360 tiles. Each 32×16-tile chunk owns a half-resolution `Image`
+**Streaming**: the world is 56×360 tiles. Each 56×16-tile chunk owns a half-resolution `Image`
 built from the tile atlas; `stream_around(row)` keeps ±2–3 chunks' sprites alive and drops the
-rest. The chunk *images* persist for the whole session, so carved tunnels never reset. Enemy
+rest. Unloading frees the chunk's *images* as well as its sprites (see the memory note under
+Performance) — carved tunnels survive regardless, because they live in the `_carved_cells`
+diff rather than in the pixels, and repaint on the next load. Enemy
 spawn rolls happen once per chunk per session (cleared areas stay cleared). Every chunk that's
 ever been loaded is marked in `_visited_chunks`, which backs both save persistence and the
 map screen's fog-of-war (see below) — streaming, saving and the map all read the same signal
@@ -81,8 +83,23 @@ FSM: `DRIVE` with a `BUSTED` terminal (until respawn); `drilling` is a per-frame
   a route you carve and reuse (GDD: "going up is different from going down"). Ramps carve at a
   shallower angle and a slightly wider radius than a straight bore (`ramp_angle_ratio` /
   `ramp_carve_radius_mult` in balance.json) — a smoother grade to walk, not a speed change.
-  An ore cell the player can't hold (cargo full) is left standing rather than destroyed —
-  `carve_circle`'s `can_collect_ore` parameter — so it's still there once there's room.
+  Ore is always drillable, cargo space or not: a full bay upgrades itself instead of blocking
+  the drill (see **Cargo** below).
+- **Cargo**: `GameState.try_collect_ore` is the single funnel for every ore pickup, vein or
+  treasure chest alike. With room it appends; with a full bay it displaces the least valuable
+  ore aboard *if the new one beats it*, erasing the loser and emitting `Events.ore_swapped`.
+  Ties don't swap, so a bay full of iron isn't churned by more iron. The upshot is that a full
+  bay converges on the richest haul available rather than locking the player out of every vein
+  they find, and the drill never stops working.
+- **Escape rocket**: the only way to open a route straight upward, since drilling
+  deliberately can't. Fires diagonally up-left or up-right (aimed by movement input, falling
+  back to `facing`) and steps `carve_circle` along that line, collecting any ore it passes
+  through. It is handed the player's current Drill Bit, so it stops dead at rock the drill
+  couldn't cut — a rocket can never blast through a layer gate and skip the upgrade ladder.
+  `GameState.rockets` is a per-dive consumable: spent via `use_rocket()`, refilled free by
+  `refill_rockets()` on surfacing *and* on reaching a depot, capacity grown by the **Rocket
+  Bay** upgrade track. The depot restock hangs off the existing proximity transition in
+  `game.gd`, so it fires once on arrival rather than every frame in range.
 - **Rotation**: the sprite banks toward the current drill/travel direction, clamped to
   roughly ±30° and eased with `lerp_angle` — the art reads nose-down with treads at the base,
   so a full spin would read as upside-down.
@@ -95,6 +112,86 @@ FSM: `DRIVE` with a `BUSTED` terminal (until respawn); `drilling` is a per-frame
 - **Bust** (GDD lose condition): overheat, hull 0, or Government Driller contact. Cargo is
   cleared, money kept, respawn at the surface. Ore already banked at a depot is untouched —
   `lose_cargo()` only ever clears `GameState.cargo`.
+
+## Tutorial / FTUE (`scripts/game/ftue.gd`)
+
+A mandatory first run: one small hand-authored arena that walks the player through the core
+loop once — drill, collect ore, surface, upgrade, drill deeper — then drops them into the
+real world. Every way into a run (DIVE, Daily Challenge, New Drilling) routes through
+`main_menu._start_game`, which is the single gate: if `tutorial_done` is false, the run
+becomes the tutorial.
+
+**It reuses the real game rather than imitating it.** `MineWorld.use_authored_layout()`
+makes `cell_info()` return hand-placed cells instead of procedural generation, and turns off
+the procedural extras (depots, vaults, enemy spawns). Because carving, physics, rendering,
+water and ore pickup all read `cell_info()`, the drill, heat bar, cargo swap, shop and rockets
+the player learns are the actual ones.
+
+**The level** (22×15): an ore pocket at rows 3–4, a full-width tier-2 gate at rows 8–9, and a
+rich pocket at rows 12–13. The pocket is built so even its *cheapest* 8 ores (the base bay)
+out-value the Drill Bit Lv2 — `_test_ftue` enforces that rather than trusting the layout.
+
+**Steps are derived, not chained.** `FTUE.derive_step()` is a pure function of money, cargo
+value, bit level and depth, evaluated every frame. A player who surfaces short of the target,
+busts, or does things out of order always sees the correct next instruction instead of sitting
+on a step that was already skipped. It's pure so it can be unit-tested without a scene.
+
+**Softlocks designed out:**
+- The shop only allows the Drill Bit (`LATER` on everything else) — the arena's ore is finite,
+  and spending it on Cargo Bay first could leave the upgrade permanently unaffordable.
+- A bust reloads the scene. Otherwise the lost cargo's ore is already mined out of the level.
+  Money and the Bit live in `GameState`, not the world, so banked progress survives the reload.
+- No tunnel healing, enemies, water, depots or vaults in the arena.
+
+**The sandbox.** `GameState.begin_ftue()` snapshots the real state and plays on a clean copy;
+`finish_ftue()` restores it and grants only the Drill Bit Lv2, plus anything *learned* (codex
+entries and achievements, so a Discovery Card seen in the tutorial doesn't repeat).
+`abandon_ftue()` restores without granting anything if the player quits to the menu. This is
+what makes a mandatory tutorial safe for a returning player whose save predates it — they'd
+otherwise have real money and a dive in progress overwritten by the tutorial's 0$ start. While
+`ftue_mode` is on, `to_dict()` returns the real snapshot, so autosaves and app-backgrounding
+saves can never persist sandbox values.
+
+`game.gd` and `player.gd` capture `persists_world()` **once at `_ready`** rather than reading
+it live. `finish_ftue()` clears `ftue_mode` a frame or two before the scene is torn down; a live
+read in that window would write the arena's dig state and coordinates into the real save.
+
+## Contextual tips (`scripts/ui/tip_system.gd`, `data/tips.json`)
+
+A `?` floats over whatever a tip is about — an enemy, a water pocket, a depot, the refinery — or
+over the pod for its own states (heat past 60%, a full bay, standing stranded in a shaft). Hover
+for the tip, click or press **H** to open it as a pausing `TipCard`. The pause menu's **GUIDE**
+lists every tip, grouped by category.
+
+**A `?` retires once read — for every instance of that tip.** Reading about water once clears
+the `?` from every water pocket, because retirement is keyed by tip id (`GameState.tips_seen`),
+not by instance; elite enemies share their base enemy's id, so one read covers both. Nothing is
+lost: the GUIDE keeps every tip readable forever. Retired state is saved, carried out of a
+*finished* tutorial like codex entries (not out of an abandoned one), and cleared by Reset Save
+Data. The GUIDE itself never marks anything read — it shows every tip at once, so treating it as
+reading would silently retire every `?` in the game.
+
+**What counts as reading:** opening the card (click or H) retires immediately. Hovering counts
+only after `HOVER_READ_SEC` (1.2s): tips float over moving enemies, so the cursor brushes across
+bubbles by accident constantly and would otherwise retire them unread. A tip that becomes read
+while still under the cursor keeps its bubble until the cursor leaves, so the tooltip isn't
+pulled away mid-sentence; then it shrinks away, and its freed slot goes to the next most urgent
+unread tip. Copy lives in `data/tips.json`, loaded by `Balance` alongside the codex.
+
+**Relevance** is re-evaluated every 0.15s, not every frame: nearby enemies (mapped through
+`Balance.tip_for_enemy`, so elite variants share their base enemy's tip), an 11×11 cell scan for
+magma, chests, water and rock the current bit can't cut, depots in range, and pod state. One `?`
+per kind of thing, anchored to the nearest instance — not one over every cell of a lake — and at
+most 3 at once, ranked by each tip's unique `priority` so a Government Driller outranks a chest.
+Positions *are* updated every frame, so bubbles track moving enemies smoothly.
+
+**Why a CanvasLayer (8), not bubbles placed in the world.** The vignette (layer 5) darkens the
+world progressively with depth; world-space bubbles would fade out in exactly the deep,
+dangerous places they matter most. So they sit between the vignette and the HUD (10) and are
+re-projected through the viewport's canvas transform each frame.
+
+`_test_tips` enforces the data: every enemy in `balance.json` must have a tip, since the likely
+bug here isn't in code but in adding an enemy and forgetting its tip.
 
 ## Depots (`scripts/ui/depot_screen.gd`, `MineWorld.depot_positions`)
 
@@ -193,7 +290,19 @@ Settings persist separately (`user://settings.json`) so wiping progress keeps pr
 
 ## Performance notes (mobile budget)
 
-- GL Compatibility renderer, 720×1280 canvas-items stretch, 60 fps cap.
+- **Web build (landscape)**: GL Compatibility renderer — which is also exactly what
+  WebGL2 wants — at a 1280×720 canvas-items stretch, 60 fps cap. Input is keyboard and
+  mouse; there are no on-screen D-pads. The Web export preset runs with
+  `thread_support=false`, so hosting needs no COOP/COEP headers.
+- The world is 56 tiles wide so landscape framing stays as enclosed as portrait was:
+  at 32 tiles a 1280-wide viewport would show two thirds of the map and both bedrock
+  walls at once. Enemy spawn budget scales with width so the world doesn't thin out.
+- **Chunk images are evicted on unload**, not just their sprites. At 56 tiles a chunk's
+  terrain + water buffers are ~7 MB, so retaining every visited chunk would reach
+  ~165 MB by the Core. Safe only because dug state lives in the `_carved_cells` /
+  `_mined` diffs rather than the pixels — a chunk repaints from cell content on its
+  next load. Water re-seeds from its generated cells, so flow that happened off-screen
+  is not preserved across an unload.
 - Terrain is ~6 chunk sprites on screen (one `Sprite2D` each) → a handful of draw calls.
   Carving edits the chunk `Image` in place and re-uploads only changed chunks that frame.
   Water adds one more `Sprite2D`/`Image` pair per loaded chunk, same resolution.

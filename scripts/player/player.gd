@@ -32,6 +32,11 @@ var _in_water := false
 var _wet_cells := {}
 var _bit_toast_cooldown := 0.0
 var _cargo_toast_cooldown := 0.0
+var _rocket_toast_cooldown := 0.0
+## Fixed for this player's lifetime. Read live, it would flip the moment the
+## tutorial finishes -- a frame before the scene swaps -- and write the
+## tutorial arena's coordinates into the real game's resume point.
+var _persists_world := true
 var _warned := false
 var _drill_was_hard := false
 var _coyote := 0.0
@@ -64,6 +69,8 @@ func _ready() -> void:
 	_dust.position = Vector2(0, 24)
 	add_child(_dust)
 	Events.hull_changed.emit(hull, GameState.max_hull())
+	Events.ore_swapped.connect(_on_ore_swapped)
+	_persists_world = GameState.persists_world()
 
 
 func _physics_process(delta: float) -> void:
@@ -72,14 +79,17 @@ func _physics_process(delta: float) -> void:
 	_invuln = maxf(0.0, _invuln - delta)
 	_bit_toast_cooldown = maxf(0.0, _bit_toast_cooldown - delta)
 	_cargo_toast_cooldown = maxf(0.0, _cargo_toast_cooldown - delta)
+	_rocket_toast_cooldown = maxf(0.0, _rocket_toast_cooldown - delta)
 	_coyote = maxf(0.0, _coyote - delta)
+	if Input.is_action_just_pressed("fire_rocket"):
+		_fire_rocket()
 	_process_move_and_drill(delta)
 	_process_heat(delta)
 	_process_environment()
 	_report_depth()
-	# Daily Challenge is a fresh one-dive run every time; never let it clobber
-	# the persistent dive's saved resume point.
-	if not GameState.daily_mode:
+	# Daily Challenge and the tutorial are throwaway worlds; never let them
+	# clobber the persistent dive's saved resume point.
+	if _persists_world:
 		GameState.last_position = position
 
 
@@ -133,12 +143,11 @@ func _process_move_and_drill(delta: float) -> void:
 	_drill_was_hard = false
 	if carve_dir != Vector2.ZERO:
 		var carve_center := position + carve_dir * (_radius + 8.0)
-		var can_collect_ore := GameState.cargo.size() < GameState.cargo_capacity()
 		var carve_radius_used := float(p["carve_radius"])
 		if carve_dir.y < 0.0:  # ramp: a bit more generous so the climb feels smoother
 			carve_radius_used *= float(p["ramp_carve_radius_mult"])
 		var result := world.carve_circle(carve_center,
-			carve_radius_used, GameState.bit_level(), can_collect_ore)
+			carve_radius_used, GameState.bit_level())
 		if int(result["removed"]) > 0:
 			drilling = true
 			_drill_was_hard = bool(result["hard"])
@@ -151,8 +160,6 @@ func _process_move_and_drill(delta: float) -> void:
 				Events.fx_shake.emit(0.16 if _drill_was_hard else 0.10)
 		elif int(result["blocked_tier"]) > 0:
 			_notify_blocked(int(result["blocked_tier"]))
-		if bool(result["cargo_full_blocked"]):
-			_notify_cargo_full()
 
 	# ---- velocities ----
 	if drilling:
@@ -207,6 +214,47 @@ func _process_move_and_drill(delta: float) -> void:
 	_sprite.rotation = lerp_angle(_sprite.rotation, target_rot, delta * 10.0)
 
 
+## Escape rocket: blasts a diagonal shaft up-left or up-right, aimed with the
+## movement input (or the way the pod is facing). This is the only way to open
+## a route straight upward -- drilling deliberately can't -- so it's the answer
+## to being stranded at the bottom of a shaft with no ramp carved.
+##
+## It respects the current Drill Bit: a rocket stops dead at rock the drill
+## couldn't cut, so it can never blast through a layer gate and skip the
+## upgrade ladder.
+func _fire_rocket() -> void:
+	if state == State.BUSTED or world == null:
+		return
+	if not GameState.use_rocket():
+		if _rocket_toast_cooldown <= 0.0:
+			_rocket_toast_cooldown = 2.0
+			AudioManager.play("click", -6.0, 0.6)
+			Events.toast.emit("No rockets left - surface to refill the bay.")
+		return
+
+	var p := Balance.player
+	var dir_x := Input.get_axis("move_left", "move_right")
+	var aim := float(facing) if is_zero_approx(dir_x) else signf(dir_x)
+	var dir := Vector2(aim, -1.0).normalized()
+
+	var step := float(p["rocket_step_px"])
+	var steps := int(float(p["rocket_range_tiles"]) * float(MineWorld.TILE) / step)
+	var blast := position
+	for i in steps:
+		blast += dir * step
+		var res := world.carve_circle(blast, float(p["rocket_carve_radius"]),
+			GameState.bit_level())
+		_handle_pickups(res)
+		# Nothing cut and something in the way: the rocket detonates here.
+		if int(res["removed"]) == 0 and int(res["blocked_tier"]) > 0:
+			break
+
+	AudioManager.play("explosion", -3.0, 1.15)
+	SettingsManager.vibrate(90)
+	Events.fx_burst.emit("impact", blast, dir, 16)
+	Events.fx_shake.emit(0.85)
+
+
 func _handle_pickups(result: Dictionary) -> void:
 	for ore_id: String in result["ores"]:
 		if GameState.try_collect_ore(ore_id):
@@ -216,18 +264,32 @@ func _handle_pickups(result: Dictionary) -> void:
 			Events.fx_burst.emit("ether" if gives_ether else "ore",
 				position, Vector2.ZERO, 6 if gives_ether else 4)
 		else:
-			Events.toast.emit("Cargo full! Return to the surface to sell.")
+			_notify_cargo_full(ore_id)
 	for cell: Vector2i in result["chests"]:
 		chest_opened.emit(cell)
 
 
-## Ore is left standing (not destroyed) when cargo is full, so the player
-## can come back for it once they've sold or deposited some cargo.
-func _notify_cargo_full() -> void:
+## A full bay upgraded itself. Only the toast lives here: try_collect_ore
+## returns true for a swap, so _handle_pickups already plays the pickup sound,
+## haptic and particles -- duplicating them here would double-buzz the phone.
+func _on_ore_swapped(added_id: String, removed_id: String) -> void:
 	if _cargo_toast_cooldown > 0.0:
 		return
 	_cargo_toast_cooldown = 2.5
-	Events.toast.emit("Cargo full! Deposit at a safe spot or sell at the surface first.")
+	Events.toast.emit("Cargo full - traded %s for %s" % [
+		String(Balance.ores[removed_id]["name"]),
+		String(Balance.ores[added_id]["name"])])
+
+
+## Cargo is full and this ore wasn't worth more than the cheapest thing
+## aboard, so it is mined out and lost. The block breaks either way.
+func _notify_cargo_full(ore_id: String) -> void:
+	if _cargo_toast_cooldown > 0.0:
+		return
+	_cargo_toast_cooldown = 2.5
+	AudioManager.play("click", -6.0, 0.6)
+	Events.toast.emit("Cargo full - %s left behind. Sell or deposit to make room."
+		% String(Balance.ores[ore_id]["name"]))
 
 
 func _notify_blocked(tier: int) -> void:

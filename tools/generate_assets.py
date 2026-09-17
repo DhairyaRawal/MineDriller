@@ -565,7 +565,7 @@ def build_new_enemies():
 
 
 def build_upgrade_icons():
-    """64x64 icons for the six shop upgrade tracks."""
+    """64x64 icons for the seven shop upgrade tracks."""
     def canvas():
         img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
         return img, ImageDraw.Draw(img)
@@ -621,6 +621,17 @@ def build_upgrade_icons():
     d.line((14, 30, 44, 12), fill=(240, 180, 60, 255), width=5)
     d.polygon([(52, 8), (50, 22), (38, 12)], fill=(240, 180, 60, 255))
     img.save(os.path.join(TEX, "icon_mobility.png"))
+
+    # rockets: escape rocket climbing to the upper right, matching the HUD pad
+    img, d = canvas()
+    d.polygon([(46, 10), (52, 30), (34, 40), (24, 30)], fill=(214, 220, 232, 255))
+    d.polygon([(46, 10), (52, 30), (42, 33)], fill=(160, 168, 184, 255))
+    d.ellipse((36, 20, 44, 28), fill=(120, 190, 240, 255))          # porthole
+    d.polygon([(24, 30), (34, 40), (18, 42)], fill=(222, 92, 60, 255))  # fin
+    d.polygon([(34, 40), (24, 54), (16, 48), (24, 44)],
+              fill=(250, 176, 64, 255))                             # exhaust flame
+    d.polygon([(30, 44), (22, 52), (20, 46)], fill=(255, 232, 150, 255))
+    img.save(os.path.join(TEX, "icon_rockets.png"))
 
 
 def build_half_atlas():

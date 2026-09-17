@@ -16,9 +16,14 @@ func _ready() -> void:
 	_test_layer_gating()
 	_test_economy()
 	_test_depot()
+	_test_rockets()
+	_test_ftue()
+	_test_tips()
+	_test_controls()
 	_test_save_roundtrip()
 	_test_heat_model()
 	_test_terrain_physics()
+	_test_tunnel_healing()
 	_test_water_sim()
 	await _test_end_to_end_drilling()
 	_finish()
@@ -75,7 +80,7 @@ func _test_world_determinism() -> void:
 	b.setup(12345)
 	var same := true
 	for y in range(1, 120, 7):
-		for x in range(0, 32, 3):
+		for x in range(0, a.width, 3):
 			var ia := a.cell_info(Vector2i(x, y))
 			var ib := b.cell_info(Vector2i(x, y))
 			if ia["type"] != ib["type"] or ia["ore_id"] != ib["ore_id"]:
@@ -86,7 +91,7 @@ func _test_world_determinism() -> void:
 	c.setup(99999)
 	var differs := false
 	for y in range(1, 120, 3):
-		for x in range(0, 32):
+		for x in range(0, a.width):
 			if a.cell_info(Vector2i(x, y))["type"] != c.cell_info(Vector2i(x, y))["type"]:
 				differs = true
 	_check(differs, "different seed produces different world")
@@ -150,7 +155,7 @@ func _test_layer_gating() -> void:
 	var l1: Dictionary = Balance.layers[0]
 	var band_row := int(l1["row_end"]) - 1
 	var gated := true
-	for x in 32:
+	for x in w.width:
 		var info := w.cell_info(Vector2i(x, band_row))
 		if int(info["type"]) != MineWorld.TileType.HARD or int(info["tier"]) != 2:
 			gated = false
@@ -168,6 +173,26 @@ func _test_economy() -> void:
 	for i in GameState.cargo_capacity():
 		GameState.try_collect_ore("iron")
 	_check(not GameState.try_collect_ore("iron"), "cargo capacity enforced")
+	# A full bay upgrades itself: richer ore displaces the cheapest thing
+	# aboard, and the loser is erased rather than dropped.
+	var cap := GameState.cargo_capacity()
+	GameState.cargo = []
+	for i in cap:
+		GameState.try_collect_ore("iron")
+	var preview_before := GameState.run_earn_preview
+	_check(GameState.try_collect_ore("gold"), "richer ore swaps into a full bay")
+	_check(GameState.cargo.size() == cap, "swap keeps the bay at capacity")
+	_check(GameState.cargo.count("gold") == 1 and GameState.cargo.count("iron") == cap - 1,
+		"swap erases exactly one of the cheapest ore")
+	_check(GameState.run_earn_preview == preview_before - 2 + 25,
+		"swap adjusts cargo value by the net difference")
+	_check(not GameState.try_collect_ore("iron"),
+		"cheaper ore is refused by a full bay (no churn)")
+	GameState.cargo = []
+	for i in cap:
+		GameState.try_collect_ore("opal")
+	_check(not GameState.try_collect_ore("opal"),
+		"equal-value ore does not swap (ties are not an upgrade)")
 	GameState.cargo = ["gold", "gold", "ruby"]
 	var before := GameState.money
 	GameState.sell_cargo()
@@ -219,6 +244,226 @@ func _test_depot() -> void:
 			deposited += 1
 	_check(deposited == cap, "deposits stop once the depot hits capacity")
 	GameState.from_dict({})
+
+
+## Escape rockets: a per-dive consumable that the Rocket Bay upgrade grows and
+## surfacing refills for free.
+func _test_rockets() -> void:
+	GameState.from_dict({})
+	var base := int(Balance.player["rockets_base"])
+	var per_level := int(Balance.player["rockets_per_level"])
+	_check(GameState.max_rockets() == base, "rocket bay starts at the base capacity")
+	_check(GameState.rockets == base, "a fresh run starts with a full bay")
+
+	_check(GameState.use_rocket(), "firing spends a rocket")
+	_check(GameState.rockets == base - 1, "firing decrements the count")
+	for i in base:
+		GameState.use_rocket()
+	_check(GameState.rockets == 0, "the bay empties")
+	_check(not GameState.use_rocket(), "an empty bay refuses to fire")
+
+	GameState.refill_rockets()
+	_check(GameState.rockets == base, "surfacing refills the bay")
+
+	GameState.upgrade_levels["rockets"] = 3
+	_check(GameState.max_rockets() == base + per_level * 2,
+		"each Rocket Bay level adds capacity")
+	GameState.refill_rockets()
+	_check(GameState.rockets == GameState.max_rockets(),
+		"refill tops up to the upgraded capacity")
+
+	# Rockets survive a save, clamped to whatever the bay can actually hold.
+	GameState.use_rocket()
+	var snapshot := GameState.to_dict()
+	var expected := GameState.rockets
+	GameState.from_dict({})
+	GameState.from_dict(snapshot)
+	_check(GameState.rockets == expected, "rocket count round-trips through a save")
+	GameState.from_dict({})
+
+
+## The tutorial: an authored level that can't softlock, step logic that always
+## points at the right next action, and a sandbox that can never damage the
+## player's real save.
+func _test_ftue() -> void:
+	GameState.from_dict({})
+	var bit_cost := Balance.upgrade_cost(FTUE.TARGET_UPGRADE, 1)
+
+	# --- level economy: the pocket must pay for the upgrade in ONE trip, even
+	# if the player happens to mine its cheapest ores first. Hence "worst N".
+	var layout := FTUE.build_layout()
+	var pocket_values: Array[int] = []
+	for y: int in FTUE.POCKET_ROWS:
+		for x in range(FTUE.POCKET_X_MIN, FTUE.POCKET_X_MAX + 1):
+			var cell: Dictionary = layout[Vector2i(x, y)]
+			pocket_values.append(int(Balance.ores[cell["ore_id"]]["value"]))
+	pocket_values.sort()
+	var bay := int(Balance.player["cargo_base"])
+	var worst_trip := 0
+	for i in mini(bay, pocket_values.size()):
+		worst_trip += pocket_values[i]
+	_check(worst_trip >= bit_cost,
+		"tutorial pocket pays for the upgrade in one trip even mined worst-first (%d >= %d)"
+			% [worst_trip, bit_cost])
+
+	# --- the gate: blocks the starting bit, opens to the upgrade, no way around.
+	var w := MineWorld.new()
+	add_child(w)
+	w.setup(1)
+	w.use_authored_layout(layout, FTUE.WIDTH, FTUE.DEPTH)
+	var gate_row: int = FTUE.GATE_ROWS[0]
+	var sealed := true
+	for x in w.width:
+		if w.can_drill(Vector2i(x, gate_row), 1):
+			sealed = false
+	_check(sealed, "tutorial gate spans the full width, so it can't be walked around")
+	_check(w.can_drill(Vector2i(FTUE.WIDTH / 2, gate_row), 2), "Drill Bit Lv2 cuts the tutorial gate")
+	_check(w.depot_positions().is_empty(), "authored level has no depots")
+	_check(int(w.cell_info(Vector2i(FTUE.WIDTH / 2, 1))["type"]) == MineWorld.TileType.SOFT,
+		"unlisted authored cells default to soft rock")
+	w.queue_free()
+
+	# --- step derivation: every state maps to the right next instruction.
+	_check(FTUE.derive_step(0, 0, 1, -1, bit_cost) == FTUE.Step.DRILL, "step: fresh start is DRILL")
+	_check(FTUE.derive_step(0, 30, 1, 3, bit_cost) == FTUE.Step.COLLECT, "step: some ore is COLLECT")
+	_check(FTUE.derive_step(0, bit_cost, 1, 4, bit_cost) == FTUE.Step.SURFACE, "step: enough ore is SURFACE")
+	_check(FTUE.derive_step(40, 0, 1, -1, bit_cost) == FTUE.Step.DRILL,
+		"step: surfacing short of the target sends the player back down")
+	_check(FTUE.derive_step(40, 60, 1, 4, bit_cost) == FTUE.Step.SURFACE,
+		"step: banked money counts toward the target")
+	_check(FTUE.derive_step(bit_cost, 0, 1, -1, bit_cost) == FTUE.Step.UPGRADE, "step: sold is UPGRADE")
+	_check(FTUE.derive_step(0, 0, 2, -1, bit_cost) == FTUE.Step.DEEPER, "step: upgraded is DEEPER")
+	_check(FTUE.derive_step(0, 0, 2, FTUE.RICH_ROWS[0], bit_cost) == FTUE.Step.COMPLETE,
+		"step: reaching the rich pocket COMPLETES")
+
+	# --- sandbox: real progress in, real progress out.
+	GameState.from_dict({})
+	GameState.money = 777
+	GameState.last_position = Vector2(50, 900)
+	GameState.upgrade_levels["cargo"] = 3
+	GameState.begin_ftue()
+	_check(GameState.ftue_mode and GameState.money == 0, "tutorial starts from a 0$ sandbox")
+	_check(GameState.upgrade_levels["cargo"] == 1, "tutorial sandbox starts with no upgrades")
+	GameState.money = 5000  # sandbox spending spree
+	_check(int(GameState.to_dict()["money"]) == 777,
+		"a save during the tutorial writes the REAL state, not the sandbox")
+
+	GameState.abandon_ftue()
+	_check(not GameState.ftue_mode and GameState.money == 777 and not GameState.tutorial_done,
+		"quitting the tutorial restores real state and grants nothing")
+
+	GameState.begin_ftue()
+	GameState.money = 5000
+	GameState.discover_ore("gold")
+	GameState.finish_ftue()
+	_check(not GameState.ftue_mode and GameState.tutorial_done, "finishing marks the tutorial done")
+	_check(GameState.money == 777, "finishing discards sandbox money and restores real money")
+	_check(GameState.last_position == Vector2(50, 900), "finishing restores the real resume point")
+	_check(GameState.upgrade_levels["cargo"] == 3, "finishing keeps real upgrades")
+	_check(GameState.bit_level() == 2, "finishing carries the Drill Bit Lv2 over")
+	_check("gold" in GameState.codex_discovered,
+		"ores learned in the tutorial stay in the codex (no repeat Discovery Card)")
+	GameState.from_dict({})
+
+
+## Contextual tips are pure data, so the likely bug isn't in code -- it's
+## someone adding an enemy to balance.json and forgetting to write its tip.
+func _test_tips() -> void:
+	_check(not Balance.tips.is_empty(), "tips.json loads")
+
+	var well_formed := true
+	var bad := ""
+	for id: String in Balance.tips:
+		var tip: Dictionary = Balance.tips[id]
+		for field in ["title", "body", "category", "priority"]:
+			if not tip.has(field):
+				well_formed = false
+				bad = "%s missing %s" % [id, field]
+		if tip.get("category", "") not in Balance.tip_categories:
+			well_formed = false
+			bad = "%s has unknown category %s" % [id, tip.get("category", "")]
+	_check(well_formed, "every tip has a title, body, known category and priority " + bad)
+
+	var priorities := {}
+	for id: String in Balance.tips:
+		priorities[int(Balance.tips[id]["priority"])] = true
+	_check(priorities.size() == Balance.tips.size(),
+		"tip priorities are unique, so ranking nearby tips is never a coin flip")
+
+	var uncovered := []
+	for kind: String in Balance.enemies:
+		if Balance.tip_for_enemy(kind) == "":
+			uncovered.append(kind)
+	_check(uncovered.is_empty(),
+		"every enemy in balance.json has a tip (directly or via alias) %s" % str(uncovered))
+
+	var dangling := []
+	for kind: String in Balance.tip_aliases:
+		if not Balance.tips.has(String(Balance.tip_aliases[kind])):
+			dangling.append(kind)
+	_check(dangling.is_empty(), "every tip alias points at a real tip %s" % str(dangling))
+
+	for category in Balance.tip_categories:
+		var any := false
+		for id: String in Balance.tips:
+			if Balance.tips[id].get("category", "") == category:
+				any = true
+		_check(any, "GUIDE category '%s' isn't empty" % category)
+
+	# --- retirement: a read tip's '?' goes away for good, keyed by tip id.
+	GameState.from_dict({})
+	_check(not GameState.is_tip_seen("water"), "tips start unread")
+	GameState.mark_tip_seen("water")
+	GameState.mark_tip_seen("water")
+	_check(GameState.is_tip_seen("water") and GameState.tips_seen.count("water") == 1,
+		"reading a tip retires it once (marking twice doesn't duplicate)")
+	_check(not GameState.is_tip_seen("magma"), "reading one tip doesn't retire others")
+	# Elite variants share their base enemy's tip id, so one read covers both.
+	GameState.mark_tip_seen(Balance.tip_for_enemy("crawly"))
+	_check(GameState.is_tip_seen(Balance.tip_for_enemy("crawly_elite")),
+		"reading an enemy's tip also retires it for that enemy's elite variant")
+
+	var snapshot := GameState.to_dict()
+	GameState.from_dict({})
+	_check(GameState.tips_seen.is_empty(), "resetting save data brings every tip back")
+	GameState.from_dict(snapshot)
+	_check(GameState.is_tip_seen("water"), "read tips survive a save round-trip")
+
+	# Tutorial: tips read there carry over on finish, but not on quitting out.
+	GameState.from_dict({})
+	GameState.begin_ftue()
+	GameState.mark_tip_seen("heat")
+	GameState.abandon_ftue()
+	_check(not GameState.is_tip_seen("heat"),
+		"tips read in an abandoned tutorial don't carry over")
+	GameState.begin_ftue()
+	GameState.mark_tip_seen("heat")
+	GameState.finish_ftue()
+	_check(GameState.is_tip_seen("heat"),
+		"tips read in a finished tutorial stay retired in the real game")
+	GameState.from_dict({})
+
+
+## The pause menu's controls panel reads keys from the live InputMap. If an
+## action is renamed or dropped, that row would silently render blank -- so
+## every row must resolve to real keys.
+func _test_controls() -> void:
+	var blank := []
+	for entry: Array in PauseMenu.CONTROLS:
+		if entry[1] is Array:
+			for action in entry[1]:
+				if not InputMap.has_action(String(action)):
+					blank.append(action)
+			if PauseMenu.keys_text(entry[1]) == "":
+				blank.append(entry[0])
+	_check(blank.is_empty(), "every controls-panel row resolves to real keys %s" % str(blank))
+
+	var pause_keys := PauseMenu.keys_text(["pause"])
+	_check("P" in pause_keys and "Esc" in pause_keys,
+		"pause is on both P and Esc (P matters on web, where Esc can exit fullscreen): '%s'"
+			% pause_keys)
+	_check(PauseMenu.keys_text(["move_left", "move_right"]) == "A / D   or   ← / →",
+		"left/right bindings are paired, not dumped as one list")
 
 
 func _test_save_roundtrip() -> void:
@@ -295,6 +540,56 @@ func _test_terrain_physics() -> void:
 	_check(before and not after, "drill carves a hole in solid terrain")
 	# Bedrock side wall is never passable.
 	_check(w.is_solid_px(Vector2(-8.0, 6 * 64 + 32)), "bedrock side wall stays solid")
+	w.queue_free()
+
+
+## Surfacing reseals narrow shafts but leaves wide chambers open, so every
+## dive starts through fresh rock while deliberate rooms persist.
+func _test_tunnel_healing() -> void:
+	var w := MineWorld.new()
+	add_child(w)
+	w.setup(4242)
+	w.stream_around(0)
+
+	# A 1-wide vertical shaft, built only from cells this seed generated as
+	# solid rock, so "it went back to solid" is a meaningful assertion.
+	var shaft: Array[Vector2i] = []
+	var natural_type := {}
+	for y in range(5, 20):
+		var cell := Vector2i(4, y)
+		var t := int(w.cell_info(cell)["type"])
+		if w.is_solid_type(t):
+			natural_type[cell] = t
+			shaft.append(cell)
+	_check(shaft.size() >= 4, "test seed provides solid rock to dig a shaft through")
+
+	# A 4x3 chamber comfortably contains a 3x2 block in either orientation.
+	var chamber: Array[Vector2i] = []
+	for x in range(20, 24):
+		for y in range(5, 8):
+			chamber.append(Vector2i(x, y))
+
+	for cell: Vector2i in shaft + chamber:
+		w._carved_cells[cell] = true
+		w._info_cache.erase(cell)
+	_check(int(w.cell_info(shaft[0])["type"]) == MineWorld.TileType.EMPTY,
+		"carved shaft reads as empty before healing")
+
+	var healed := w.heal_narrow_tunnels()
+	_check(healed == shaft.size(), "healing refills exactly the narrow shaft")
+
+	var shaft_restored := true
+	for cell: Vector2i in shaft:
+		if w._carved_cells.has(cell) or int(w.cell_info(cell)["type"]) != int(natural_type[cell]):
+			shaft_restored = false
+	_check(shaft_restored, "every shaft cell is solid rock again")
+
+	var chamber_intact := true
+	for cell: Vector2i in chamber:
+		if not w._carved_cells.has(cell) or int(w.cell_info(cell)["type"]) != MineWorld.TileType.EMPTY:
+			chamber_intact = false
+	_check(chamber_intact, "the wide chamber survives healing and stays open")
+	_check(w.heal_narrow_tunnels() == 0, "healing again is a no-op")
 	w.queue_free()
 
 

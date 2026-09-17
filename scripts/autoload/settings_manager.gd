@@ -25,6 +25,8 @@ func _setup_input_actions() -> void:
 		"move_down": [KEY_S, KEY_DOWN],
 		"pause": [KEY_ESCAPE, KEY_P],
 		"interact": [KEY_E, KEY_F],
+		"fire_rocket": [KEY_R, KEY_Q],
+		"show_tip": [KEY_H],
 	}
 	for action: String in bindings:
 		if not InputMap.has_action(action):

@@ -18,6 +18,9 @@ var damage := 1
 var chase_range := 0.0
 var uses_gravity := true
 var radius := 15.0
+## balance.json enemy id ("govt", "crawly_elite", ...). Lets systems that only
+## see an EnemyBase -- like the contextual tips -- tell enemies apart.
+var kind := ""
 
 var state: int = State.PATROL
 var dir := 1

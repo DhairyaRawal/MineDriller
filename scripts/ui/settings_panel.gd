@@ -27,10 +27,9 @@ func _ready() -> void:
 		func(on: bool) -> void:
 			SettingsManager.screen_shake_enabled = on
 			SettingsManager.save_settings()))
-	add_child(_toggle_row("Left-handed controls", SettingsManager.left_handed,
-		func(on: bool) -> void:
-			SettingsManager.left_handed = on
-			SettingsManager.save_settings()))
+	# No left-handed toggle on the web build: it existed to mirror the on-screen
+	# thumb clusters, and input is keyboard/mouse now. The setting itself is
+	# still persisted, so it survives if a touch build is ever revived.
 
 
 func _slider_row(label_text: String, initial: float, on_change: Callable) -> Control:

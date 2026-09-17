@@ -1,9 +1,11 @@
 class_name HUD
 extends CanvasLayer
 ## HUD: in-run interface. Top status cluster (money, ether, depth, cargo,
-## hull, next-upgrade target), the heat/cooldown bar with its ambient-floor
-## marker (the GDD's shrinking cooldown bar made visible), bottom touch
-## controls, pause button, surface Shop button, and toast messages.
+## hull, rockets, next-upgrade target), the heat/cooldown bar with its
+## ambient-floor marker (the GDD's shrinking cooldown bar made visible),
+## contextual Shop/Depot buttons, pause button, and toast messages.
+##
+## Web build: input is keyboard/mouse, so there are no on-screen D-pads.
 
 signal pause_pressed
 signal shop_pressed
@@ -23,6 +25,9 @@ var _toast_label: Label
 var _warning_rect: ColorRect
 var _shop_button: Button
 var _depot_button: Button
+var _rocket_label: Label
+var _objective_panel: PanelContainer
+var _objective_label: Label
 var _toast_queue: Array[String] = []
 var _toast_busy := false
 
@@ -100,7 +105,7 @@ func _ready() -> void:
 	layer = 10
 	_build_top()
 	_build_heat()
-	_build_touch_controls()
+	_build_context_buttons()
 	_build_toast()
 	_connect_events()
 
@@ -129,13 +134,19 @@ func _build_top() -> void:
 	row1.add_child(_cargo_label)
 	_hull_box = UIKit.hbox(5)
 	row1.add_child(_hull_box)
+	# Rocket ammo lives in the status strip now that the firing pad is gone:
+	# on web it's fired with R/Q, so this is a readout, not a control.
+	_rocket_label = UIKit.legible(UIKit.label("↗ 5", 26, UIKit.ETHER))
+	row1.add_child(_rocket_label)
 	# Always available (unlike SHOP/DEPOT, which only appear in context) --
 	# checking where you've been shouldn't require being somewhere specific.
 	var map_btn := UIKit.button("MAP", 20)
+	map_btn.focus_mode = Control.FOCUS_NONE  # see _build_context_buttons
 	map_btn.custom_minimum_size = Vector2(76, 64)
 	map_btn.pressed.connect(func() -> void: map_pressed.emit())
 	row1.add_child(map_btn)
 	var pause_btn := UIKit.button("II", 26)
+	pause_btn.focus_mode = Control.FOCUS_NONE
 	pause_btn.custom_minimum_size = Vector2(76, 64)
 	pause_btn.pressed.connect(func() -> void: pause_pressed.emit())
 	row1.add_child(pause_btn)
@@ -160,14 +171,14 @@ func _build_top() -> void:
 func _build_heat() -> void:
 	_heat_bar = HeatBar.new()
 	_heat_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_heat_bar.offset_top = 158.0
+	_heat_bar.offset_top = 128.0
 	_heat_bar.offset_left = 16.0
 	_heat_bar.offset_right = -16.0
-	_heat_bar.offset_bottom = 186.0
+	_heat_bar.offset_bottom = 154.0
 	add_child(_heat_bar)
 	var heat_caption := UIKit.legible(UIKit.label("DRILL HEAT", 16, UIKit.TEXT_DIM), 4)
 	heat_caption.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	heat_caption.offset_top = 188.0
+	heat_caption.offset_top = 156.0
 	heat_caption.offset_left = 16.0
 	add_child(heat_caption)
 
@@ -178,73 +189,62 @@ func _build_heat() -> void:
 	add_child(_warning_rect)
 
 
-func _build_touch_controls() -> void:
-	# Two clusters near the bottom corners, thumb-reachable in portrait.
-	var left_cluster := _dpad_cluster([["move_left", "◀"], ["move_right", "▶"]])
-	left_cluster.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	left_cluster.offset_left = 28.0
-	left_cluster.offset_top = -186.0
-	add_child(left_cluster)
-
-	# UP = jump (tap) / carve a rising ramp (hold with a direction).
-	# DOWN = drill down. Push into a wall to drill sideways.
-	var right_cluster := _dpad_cluster([["move_up", "▲\nJUMP"], ["move_down", "▼\nDRILL"]])
-	right_cluster.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	right_cluster.offset_left = -320.0
-	right_cluster.offset_top = -186.0
-	add_child(right_cluster)
-
-	if SettingsManager.left_handed:
-		left_cluster.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-		left_cluster.offset_left = -320.0
-		left_cluster.offset_top = -186.0
-		right_cluster.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-		right_cluster.offset_left = 28.0
-		right_cluster.offset_top = -186.0
-
-	_shop_button = UIKit.button("SHOP", 34, true)
-	_shop_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_shop_button.offset_left = -130.0
-	_shop_button.offset_right = 130.0
-	_shop_button.offset_top = -340.0
-	_shop_button.offset_bottom = -240.0
+## Web build: keyboard/mouse only, so there are no on-screen D-pads or rocket
+## pad. What remains is the two contextual buttons, which are genuine mouse
+## targets rather than thumb controls, parked in the bottom-right corner so
+## nothing overlaps the play area.
+func _build_context_buttons() -> void:
+	_shop_button = UIKit.button("SHOP", 28, true)
+	# In-game buttons must never take keyboard focus. A focused Button fires on
+	# ui_accept, which includes Space -- and Space is also jump. So clicking
+	# SHOP (or MAP, or pause) and then jumping would reopen that screen.
+	_shop_button.focus_mode = Control.FOCUS_NONE
+	_shop_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_shop_button.offset_left = -232.0
+	_shop_button.offset_right = -24.0
+	_shop_button.offset_top = -92.0
+	_shop_button.offset_bottom = -24.0
 	_shop_button.visible = false
 	_shop_button.pressed.connect(func() -> void: shop_pressed.emit())
 	add_child(_shop_button)
 
-	# Same slot family as SHOP, stacked just above it -- only shown when the
-	# player is standing near one of the 15 safe-spot depots.
-	_depot_button = UIKit.button("DEPOT", 34, true)
-	_depot_button.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_depot_button.offset_left = -130.0
-	_depot_button.offset_right = 130.0
-	_depot_button.offset_top = -440.0
-	_depot_button.offset_bottom = -340.0
+	# Stacked directly above SHOP; the two are never relevant at the same time,
+	# but stacking keeps either from jumping position when both are possible.
+	_depot_button = UIKit.button("DEPOT", 28, true)
+	_depot_button.focus_mode = Control.FOCUS_NONE
+	_depot_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_depot_button.offset_left = -232.0
+	_depot_button.offset_right = -24.0
+	_depot_button.offset_top = -172.0
+	_depot_button.offset_bottom = -104.0
 	_depot_button.visible = false
 	_depot_button.pressed.connect(func() -> void: depot_pressed.emit())
 	add_child(_depot_button)
 
-
-func _dpad_cluster(entries: Array) -> HBoxContainer:
-	# Round pads instead of filled rectangles: they occupy far less visual
-	# weight over the terrain while keeping a >88px touch target.
-	var box := UIKit.hbox(18)
-	for entry: Array in entries:
-		var action: String = entry[0]
-		var btn := UIKit.touch_pad(entry[1])
-		btn.button_down.connect(func() -> void:
-			Input.action_press(action)
-			SettingsManager.vibrate(12))
-		btn.button_up.connect(func() -> void: Input.action_release(action))
-		box.add_child(btn)
-	return box
+	# Tutorial objective. Bottom-centre rather than near the top: toasts already
+	# own the top of the screen, and a quest tracker that a toast can cover is
+	# useless. Clear of the SHOP/DEPOT stack in the bottom-right corner.
+	_objective_panel = UIKit.panel(Color(0.10, 0.08, 0.16, 0.92), 14)
+	_objective_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_objective_panel.offset_left = -390.0
+	_objective_panel.offset_right = 390.0
+	_objective_panel.offset_top = -92.0
+	_objective_panel.offset_bottom = -24.0
+	_objective_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_objective_panel.visible = false
+	_objective_label = UIKit.legible(UIKit.label("", 22, UIKit.ACCENT), 4)
+	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_objective_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_objective_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_objective_panel.add_child(_objective_label)
+	add_child(_objective_panel)
 
 
 func _build_toast() -> void:
 	_toast_label = UIKit.legible(UIKit.label("", 28, Color.WHITE), 6)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_toast_label.offset_top = 240.0
+	_toast_label.offset_top = 196.0
 	_toast_label.offset_left = -340.0
 	_toast_label.offset_right = 340.0
 	_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -264,9 +264,13 @@ func _connect_events() -> void:
 	Events.heat_changed.connect(_on_heat_changed)
 	Events.depth_changed.connect(_on_depth_changed)
 	Events.toast.connect(show_toast)
-	Events.tutorial_step.connect(show_toast)
 	Events.upgrade_purchased.connect(func(_id: String, _lvl: int) -> void: _refresh_target())
 	Events.depot_proximity.connect(set_depot_nearby)
+	Events.rockets_changed.connect(_on_rockets_changed)
+	Events.ftue_objective.connect(func(text: String) -> void:
+		_objective_label.text = text
+		_objective_panel.visible = text != "")
+	_on_rockets_changed(GameState.rockets, GameState.max_rockets())
 	# Initial values
 	_money_label.text = "%d $" % GameState.money
 	_ether_label.text = "%d ether" % GameState.ether
@@ -306,6 +310,13 @@ func _on_depth_changed(row: int, km: float, _layer_id: int) -> void:
 
 func set_at_surface(at_surface: bool) -> void:
 	_shop_button.visible = at_surface
+
+
+## Greys out at zero so an empty bay reads at a glance rather than only when a
+## press fails.
+func _on_rockets_changed(count: int, max_count: int) -> void:
+	_rocket_label.text = "↗ %d/%d" % [count, max_count]
+	_rocket_label.modulate = Color.WHITE if count > 0 else Color(1, 1, 1, 0.45)
 
 
 func set_depot_nearby(depot_id: String) -> void:

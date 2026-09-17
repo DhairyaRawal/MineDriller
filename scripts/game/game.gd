@@ -5,7 +5,6 @@ extends Node2D
 ## code; game.tscn is just this script on a Node2D.
 
 const MAX_LIVE_ENEMIES := 24
-const SPAWN_CELL := Vector2i(16, -1)
 const DEPOT_RADIUS := 90.0
 
 var world: MineWorld
@@ -21,18 +20,37 @@ var _was_at_surface := true
 var _shake := 0.0
 var _busy_ui := false
 var _nearby_depot_id := ""
+var _tips: TipSystem
+var _shop_anchor := Vector2.ZERO
+## Captured once at _ready rather than read live. finish_ftue() flips
+## GameState.ftue_mode off a frame or two BEFORE this scene is torn down, and
+## in that window a live check would let the tutorial world's dig state and
+## position leak into the real save.
+var _persists_world := true
+var _is_ftue := false
+
+
+## Where a dive starts: horizontally centred, one row above the grass. Derived
+## from world width rather than fixed, so widening the world doesn't strand the
+## player and the refinery off to one side.
+func _spawn_cell() -> Vector2i:
+	return Vector2i(world.width / 2, -1)
 
 
 func _ready() -> void:
 	_build_background()
 	world = MineWorld.new()
 	add_child(world)
+	_is_ftue = GameState.ftue_mode
+	_persists_world = GameState.persists_world()
 	var seed_value := GameState.daily_seed() if GameState.daily_mode else GameState.world_seed
 	world.setup(seed_value)
-	# Daily Challenge is a fresh one-dive run every time (date-seeded world),
+	if _is_ftue:
+		world.use_authored_layout(FTUE.build_layout(), FTUE.WIDTH, FTUE.DEPTH)
+	# Daily Challenge and the tutorial are fresh throwaway worlds every time,
 	# so the persistent world diff/position only apply to a normal dive.
-	var resuming := not GameState.daily_mode and GameState.last_position != Vector2.ZERO
-	if not GameState.daily_mode:
+	var resuming := _persists_world and GameState.last_position != Vector2.ZERO
+	if _persists_world:
 		world.import_diff(GameState.world_diff)
 
 	_build_surface_decor()
@@ -43,7 +61,7 @@ func _ready() -> void:
 
 	player = Player.new()
 	player.world = world
-	player.position = GameState.last_position if resuming else world.cell_to_world(SPAWN_CELL)
+	player.position = GameState.last_position if resuming else world.cell_to_world(_spawn_cell())
 	player.busted.connect(_on_busted)
 	player.chest_opened.connect(_on_chest_opened)
 	add_child(player)
@@ -81,13 +99,30 @@ func _ready() -> void:
 	hud.map_pressed.connect(_open_map)
 	add_child(hud)
 
-	add_child(Tutorial.new())
+	# Contextual '?' tips run everywhere, the tutorial included -- it's a good
+	# place to first meet the '?' itself. They replace the old one-shot toast
+	# tutorial, whose hints now live in data/tips.json and never retire.
+	_tips = TipSystem.new()
+	_tips.world = world
+	_tips.player = player
+	_tips.enemies = _enemies
+	_tips.shop_anchor = _shop_anchor
+	add_child(_tips)
+
+	if _is_ftue:
+		var ftue := FTUE.new()
+		ftue.player = player
+		add_child(ftue)
 	Events.codex_discovered.connect(_on_ore_discovered)
 	Events.fx_shake.connect(func(strength: float) -> void:
 		_shake = maxf(_shake, strength))
 	Events.cargo_sold.connect(_on_cargo_sold)
-	Events.upgrade_purchased.connect(func(_id: String, _lvl: int) -> void:
-		player.refresh_hull_after_upgrade())
+	Events.upgrade_purchased.connect(func(id: String, _lvl: int) -> void:
+		player.refresh_hull_after_upgrade()
+		# Buying the bay at the surface should hand you the new capacity now,
+		# not on the next surfacing.
+		if id == "rockets":
+			GameState.refill_rockets())
 
 	AudioManager.play_music()
 	if GameState.daily_mode:
@@ -130,8 +165,10 @@ func _build_surface_decor() -> void:
 	shop_sprite.centered = false
 	var art_h := float(shop_sprite.texture.get_height())
 	shop_sprite.position = Vector2(
-		SPAWN_CELL.x * MineWorld.TILE - 330.0, -art_h + 6.0)
+		_spawn_cell().x * MineWorld.TILE - 330.0, -art_h + 6.0)
 	add_child(shop_sprite)
+	# The shop tip's '?' floats over the refinery's roof.
+	_shop_anchor = shop_sprite.position + Vector2(shop_sprite.texture.get_width() * 0.5, 0.0)
 
 
 func _process(delta: float) -> void:
@@ -161,6 +198,10 @@ func _process(delta: float) -> void:
 			clampf(depth_frac * 2.2, 0.0, 1.0) * 0.82)
 		vig_mat.set_shader_parameter("radius", lerpf(1.25, 0.62, depth_frac))
 
+	# Tip bubbles hide while a shop, depot or map screen owns the display. Those
+	# don't all pause the tree, so the tips can't rely on pausing to stop.
+	_tips.suppressed = _busy_ui
+
 	# Chunk streaming
 	if absi(row - _last_stream_row) >= 8:
 		_last_stream_row = row
@@ -176,6 +217,14 @@ func _process(delta: float) -> void:
 			GameState.sell_cargo()
 			AudioManager.play("sell")
 			SettingsManager.vibrate(50)
+		# The mine closes up behind you: narrow shafts and ramps refill, wide
+		# chambers stay. Done here rather than on a timer so it can only ever
+		# happen while the player is safely above ground.
+		GameState.refill_rockets()
+		# No healing in the tutorial: it isn't one of the mechanics being taught,
+		# and a shaft vanishing mid-lesson would just read as a bug.
+		if not _is_ftue and world.heal_narrow_tunnels() > 0:
+			Events.toast.emit("The mine has collapsed behind you - your shafts are gone.")
 	elif not at_surface and _was_at_surface:
 		hud.set_at_surface(false)
 	_was_at_surface = at_surface
@@ -190,6 +239,12 @@ func _process(delta: float) -> void:
 	if found_id != _nearby_depot_id:
 		_nearby_depot_id = found_id
 		Events.depot_proximity.emit(_nearby_depot_id)
+		# Depots double as supply caches: simply reaching one restocks rockets,
+		# no menu required. Fires on arrival only, not every frame in range.
+		if found_id != "" and GameState.rockets < GameState.max_rockets():
+			GameState.refill_rockets()
+			AudioManager.play("pickup", -2.0, 0.8)
+			Events.toast.emit("Depot resupply - rockets restocked.")
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -250,6 +305,7 @@ func _on_chunk_spawns(spawns: Array) -> void:
 			_:
 				continue
 		enemy.setup(world, player, Balance.enemies[type], "res://assets/textures/%s.png" % type)
+		enemy.kind = type
 		enemy.position = world.cell_to_world(spawn["cell"])
 		_enemies.add_child(enemy)
 
@@ -287,7 +343,7 @@ func _on_chest_opened(cell: Vector2i) -> void:
 ## Pulled by SaveManager right before it writes to disk, so the save always
 ## carries a fresh world diff without exporting it every frame.
 func _sync_world_diff() -> void:
-	if not GameState.daily_mode:
+	if _persists_world:
 		GameState.world_diff = world.export_diff()
 
 
@@ -302,8 +358,16 @@ func _on_busted(reason: String) -> void:
 
 
 func _respawn() -> void:
+	# The tutorial's ore supply is finite and hand-placed. A bust empties the
+	# cargo, and the ore it held is already mined out of the level -- so a
+	# normal respawn could leave the player unable to ever afford the upgrade.
+	# Rebuilding the scene restores every ore cell. Money and the Drill Bit are
+	# GameState, not world state, so any progress already banked survives.
+	if _is_ftue:
+		get_tree().reload_current_scene()
+		return
 	_busy_ui = false
-	player.respawn(world.cell_to_world(SPAWN_CELL))
+	player.respawn(world.cell_to_world(_spawn_cell()))
 	world.stream_around(0)
 	_last_stream_row = 0
 	camera.position = player.position

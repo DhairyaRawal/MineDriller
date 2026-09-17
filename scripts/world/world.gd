@@ -56,6 +56,15 @@ var _water_seeded_chunks := {}        # chunk -> true (initial water placed once
 var _water_cells := {}                # Vector2i cell -> true (coarse index: has water pixels)
 var _water_sim_accum := 0.0
 
+# ---- authored levels ----
+## When true, cell content comes from `_authored` instead of procedural
+## generation, and the procedural extras (depots, vaults, enemy spawns) are
+## off. Used by the tutorial. Everything downstream -- carving, physics,
+## rendering, ore pickup -- still flows through cell_info(), so an authored
+## level exercises exactly the same code as the real game.
+var is_authored := false
+var _authored := {}                   # Vector2i -> cell info; unlisted cells are soft rock
+
 
 func setup(world_seed: int) -> void:
 	seed_value = world_seed
@@ -74,9 +83,25 @@ func setup(world_seed: int) -> void:
 	for d in [_images, _sprites, _dirty, _loaded_chunks, _spawned_chunks,
 			_chunk_specials, _mined, _opened_chests, _erosion, _info_cache,
 			_carved_cells, _visited_chunks, _depot_defs,
-			_water_images, _water_sprites, _water_dirty, _water_seeded_chunks, _water_cells]:
+			_water_images, _water_sprites, _water_dirty, _water_seeded_chunks, _water_cells,
+			_authored]:
 		d.clear()
 	_water_sim_accum = 0.0
+	is_authored = false
+
+
+## Swap procedural generation for a hand-authored level. Call after setup()
+## and before the first stream_around(). `cells` only needs the special cells
+## (ore, gates); anything unlisted inside the bounds is layer-1 soft rock.
+func use_authored_layout(cells: Dictionary, level_width: int, level_depth: int) -> void:
+	is_authored = true
+	_authored = cells.duplicate()
+	width = level_width
+	max_depth_row = level_depth
+	_info_cache.clear()
+	_depot_defs.clear()
+	# The backdrop polygon was sized from the procedural world's dimensions.
+	_build_backdrop()
 
 
 func _process(_delta: float) -> void:
@@ -175,14 +200,32 @@ func _unload_chunk(chunk: int) -> void:
 		_water_sprites[chunk].queue_free()
 		_water_sprites.erase(chunk)
 
+	# Free the pixel buffers too, not just the sprites. At 56 tiles wide a
+	# chunk's terrain + water images are ~7 MB, so keeping every visited chunk
+	# resident would reach ~165 MB by the Core -- fine natively, not on web.
+	#
+	# This is only safe because dug state lives in the _carved_cells / _mined
+	# diffs rather than in the pixels: _ensure_image repaints the chunk from
+	# cell content on the next load, and _ensure_water_seeded re-seeds it. The
+	# cost is sub-cell carve detail, exactly the fidelity the save system
+	# already trades away (see export_diff).
+	_images.erase(chunk)
+	_dirty.erase(chunk)
+	_water_images.erase(chunk)
+	_water_dirty.erase(chunk)
+	_water_seeded_chunks.erase(chunk)
+
 
 func _roll_spawns(chunk: int) -> void:
-	if _spawned_chunks.has(chunk):
+	if is_authored or _spawned_chunks.has(chunk):
 		return
 	_spawned_chunks[chunk] = true
 	var row_start := chunk * chunk_h
 	var spawns: Array = []
-	var spawn_budget := 5
+	# Scaled with world width: a wider world would otherwise get proportionally
+	# emptier, since this caps spawns per chunk rather than per area.
+	# Tuned as 5 per 32 columns, which is what the original layout produced.
+	var spawn_budget := maxi(1, roundi(float(width) * 5.0 / 32.0))
 	for y in range(row_start, row_start + chunk_h):
 		if spawn_budget <= 0:
 			break
@@ -314,17 +357,15 @@ func _atlas_for(info: Dictionary) -> Vector2i:
 # ----------------------------------------------------------------- carving
 
 ## Carve a circle of terrain at world position `center`. Pixels of cells the
-## current bit can't cut (and bedrock) are left standing. `can_collect_ore`
-## lets the caller withhold ore cells specifically (e.g. cargo is full) while
-## still carving every other pixel in the circle normally -- an ore left
-## standing this way is untouched and can be finished later. Returns:
-## {removed: int, hard: bool, blocked_tier: int, cargo_full_blocked: bool,
+## current bit can't cut (and bedrock) are left standing. Ore is ALWAYS
+## drillable regardless of cargo space -- a full bay upgrades itself instead
+## of blocking the drill (see GameState.try_collect_ore). Returns:
+## {removed: int, hard: bool, blocked_tier: int,
 ##  ores: Array[String], chests: Array[Vector2i]}
-func carve_circle(center: Vector2, radius: float, bit: int, can_collect_ore: bool = true) -> Dictionary:
+func carve_circle(center: Vector2, radius: float, bit: int) -> Dictionary:
 	var removed := 0
 	var hard := false
 	var blocked_tier := 0
-	var cargo_full_blocked := false
 	var ores: Array = []
 	var chests: Array = []
 	var r2 := radius * radius
@@ -358,9 +399,6 @@ func carve_circle(center: Vector2, radius: float, bit: int, can_collect_ore: boo
 				continue
 			if type == TileType.HARD and int(info["tier"]) > bit:
 				blocked_tier = maxi(blocked_tier, int(info["tier"]))
-				continue
-			if type == TileType.ORE and not can_collect_ore:
-				cargo_full_blocked = true
 				continue
 			var chunk := floori(cell.y / float(chunk_h))
 			var img := _ensure_image(chunk)
@@ -396,7 +434,7 @@ func carve_circle(center: Vector2, radius: float, bit: int, can_collect_ore: boo
 				if _erosion[cell] >= int(CELL_IMG * CELL_IMG * DUG_THRESHOLD_FRAC):
 					_carved_cells[cell] = true
 	return {"removed": removed, "hard": hard, "blocked_tier": blocked_tier,
-		"cargo_full_blocked": cargo_full_blocked, "ores": ores, "chests": chests}
+		"ores": ores, "chests": chests}
 
 
 func _clear_cell_pixels(cell: Vector2i) -> void:
@@ -438,6 +476,10 @@ func _chunk_special(chunk: int) -> Dictionary:
 ## per-chunk chance roll (unlike treasure vaults), since the design calls for
 ## a reliable number of banks, not a random find. Cached after first call.
 func depot_positions() -> Array:
+	# An authored level has no depots. Returning early also keeps game.gd's
+	# per-frame proximity scan from offering a DEPOT button mid-tutorial.
+	if is_authored:
+		return []
 	if not _depot_defs.is_empty():
 		return _depot_defs
 	for layer: Dictionary in Balance.layers:
@@ -482,6 +524,14 @@ func _compute_cell_info(cell: Vector2i) -> Dictionary:
 		return {"type": TileType.EMPTY, "layer_id": 0, "tier": 0, "ore_id": ""}
 	if y == 0:
 		return {"type": TileType.GRASS, "layer_id": 1, "tier": 1, "ore_id": ""}
+
+	# Authored levels skip everything procedural below: no caves, water,
+	# vaults, depot rooms or random ore -- only what the level designer placed.
+	# Bounds, the surface row and dug/mined state above still apply, so
+	# drilling an authored level behaves identically to the real world.
+	if is_authored:
+		return _authored.get(cell,
+			{"type": TileType.SOFT, "layer_id": 1, "tier": 1, "ore_id": ""})
 
 	var layer: Dictionary = Balance.layer_for_row(y)
 	var layer_id := int(layer["id"])
@@ -636,6 +686,96 @@ func import_diff(diff: Dictionary) -> void:
 	for chunk in diff.get("visited_chunks", []):
 		_visited_chunks[int(chunk)] = true
 	_info_cache.clear()
+
+
+# ------------------------------------------------------------- tunnel healing
+
+## Minimum chamber footprint that survives a heal, checked in both
+## orientations. A shaft or ramp is ~1 tile wide and can never contain one,
+## so corridors close up while deliberately widened rooms stay open.
+const HEAL_KEEP_BLOCKS := [Vector2i(3, 2), Vector2i(2, 3)]
+
+## Rows at the very top that never reseal, so the entry hole stays open.
+const SURFACE_KEEP_ROWS := 1
+
+
+## Close up the narrow tunnels the player dug, leaving wide chambers intact.
+## Called when the player surfaces (see game.gd), so every dive starts through
+## fresh rock while big excavated rooms persist as landmarks.
+##
+## Only plain carved rock heals. Collected ore cells (`_mined`) stay gone --
+## ore does not respawn -- and natural caves, depot rooms and treasure vaults
+## were never carved in the first place, so they are untouched.
+## Returns the number of cells refilled.
+func heal_narrow_tunnels() -> int:
+	if _carved_cells.is_empty():
+		return 0
+	var keep := _wide_enough_cells()
+	var healed: Array[Vector2i] = []
+	for cell: Vector2i in _carved_cells:
+		# Never reseal the mouth of the mine. "At surface" allows the pod to
+		# sit part-way into row 0, so healing it could embed the player in
+		# fresh grass -- and re-drilling the entry every dive is busywork.
+		if cell.y <= SURFACE_KEEP_ROWS:
+			continue
+		if not keep.has(cell):
+			healed.append(cell)
+	if healed.is_empty():
+		return 0
+
+	var touched_chunks := {}
+	for cell: Vector2i in healed:
+		_carved_cells.erase(cell)
+		_info_cache.erase(cell)
+		_clear_water_cell(cell)  # water can't be left floating inside restored rock
+		touched_chunks[floori(cell.y / float(chunk_h))] = true
+
+	# Dropping the cached image forces _ensure_image to repaint the chunk from
+	# cell content (and re-round its cave edges). Only chunks that are actually
+	# on screen get repainted now -- the rest would just be re-materialising
+	# megabytes of pixels the player can't see, and they rebuild correctly from
+	# the diff whenever they next stream in.
+	for chunk: int in touched_chunks:
+		_images.erase(chunk)
+		if _sprites.has(chunk):
+			_ensure_image(chunk)
+			_dirty[chunk] = true
+	return healed.size()
+
+
+## Every carved cell that belongs to at least one fully-carved keep-block.
+func _wide_enough_cells() -> Dictionary:
+	var keep := {}
+	for cell: Vector2i in _carved_cells:
+		for dims: Vector2i in HEAL_KEEP_BLOCKS:
+			if not _block_all_carved(cell, dims):
+				continue
+			for dx in dims.x:
+				for dy in dims.y:
+					keep[cell + Vector2i(dx, dy)] = true
+	return keep
+
+
+func _block_all_carved(origin: Vector2i, dims: Vector2i) -> bool:
+	for dx in dims.x:
+		for dy in dims.y:
+			if not _carved_cells.has(origin + Vector2i(dx, dy)):
+				return false
+	return true
+
+
+func _clear_water_cell(cell: Vector2i) -> void:
+	var chunk := floori(cell.y / float(chunk_h))
+	var img: Image = _water_images.get(chunk)
+	if img == null:
+		return
+	var x0 := cell.x * CELL_IMG
+	var y0 := (cell.y - chunk * chunk_h) * CELL_IMG
+	for py in range(y0, y0 + CELL_IMG):
+		for px in range(x0, x0 + CELL_IMG):
+			img.set_pixel(px, py, Color(0, 0, 0, 0))
+	_water_cells.erase(cell)
+	_water_dirty[chunk] = true
 
 
 # ----------------------------------------------------------- water simulation
@@ -806,6 +946,13 @@ func step_water_simulation(center: Vector2, delta: float) -> void:
 			var cell := Vector2i(ccell.x + dx, y)
 			if _water_cells.has(cell):
 				budget = _simulate_water_cell(cell, budget, moved)
+
+
+## Whether any water currently sits in this cell. Cheaper than is_water_px for
+## "is there water around here" questions, and accurate for water that has
+## flowed, which the static generation cell type is not.
+func cell_has_water(cell: Vector2i) -> bool:
+	return _water_cells.has(cell)
 
 
 ## Pixel-accurate "is there water physically here right now" -- wherever the

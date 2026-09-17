@@ -139,6 +139,12 @@ func _refresh() -> void:
 		if cost < 0:
 			buy.text = "MAX"
 			buy.disabled = true
+		elif GameState.ftue_mode and id != FTUE.TARGET_UPGRADE:
+			# The tutorial level holds a fixed amount of ore, worth only a little
+			# more than the upgrade it teaches. Spending it on anything else would
+			# leave the player unable to ever afford the Drill Bit -- a softlock.
+			buy.text = "LATER"
+			buy.disabled = true
 		else:
 			buy.text = "%d $" % cost
 			buy.disabled = GameState.money < cost

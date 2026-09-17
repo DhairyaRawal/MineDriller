@@ -76,11 +76,20 @@ func _ready() -> void:
 	col.add_child(_panel_holder)
 
 	GameState.daily_mode = false
+	# Arriving here mid-tutorial means the player quit out of it. Put the real
+	# state back so the menu's panels don't show sandbox numbers.
+	GameState.abandon_ftue()
 	AudioManager.play_music()
 
 
 func _start_game(daily: bool) -> void:
-	GameState.daily_mode = daily
+	# The tutorial is mandatory on a player's first run. Every way into a run
+	# (DIVE, DAILY CHALLENGE, NEW DRILLING) comes through here, so this is the
+	# single gate -- there is no way to reach the real world around it.
+	if not GameState.tutorial_done:
+		GameState.begin_ftue()
+	else:
+		GameState.daily_mode = daily
 	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 
