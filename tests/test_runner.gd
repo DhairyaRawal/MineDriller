@@ -593,30 +593,70 @@ func _test_tunnel_healing() -> void:
 	w.queue_free()
 
 
-## Water should fall into an opened space below it instead of sitting fixed
-## forever (Changes.txt). Carve both cells open first so the test doesn't
-## depend on this seed happening to generate a natural water pocket there.
+## Water must fall into space drilled beneath it (Changes.txt) -- including
+## while a big resting pool sits elsewhere in view. That pool used to spend the
+## whole per-tick budget just being looked at, so the scan never reached the
+## water you'd actually drilled under and it hung in the air forever. Authored
+## layout, so none of this depends on what a seed happens to generate.
 func _test_water_sim() -> void:
 	var w := MineWorld.new()
 	add_child(w)
 	w.setup(24680)
+	var water := {"type": MineWorld.TileType.WATER, "layer_id": 1, "tier": 0, "ore_id": ""}
+	var empty := {"type": MineWorld.TileType.EMPTY, "layer_id": 1, "tier": 0, "ore_id": ""}
+	var cells := {}
+	var pool: Array[Vector2i] = []
+	for y in [12, 13]:
+		for x in range(4, 10):
+			cells[Vector2i(x, y)] = water
+			pool.append(Vector2i(x, y))
+	var top_cell := Vector2i(15, 4)
+	var below_cell := Vector2i(15, 5)
+	cells[top_cell] = water
+	cells[below_cell] = empty
+	cells[Vector2i(15, 6)] = empty
+	w.use_authored_layout(cells, 22, 30)
 	w.stream_around(0)
-	var top_cell := Vector2i(16, 4)
-	var below_cell := Vector2i(16, 5)
-	# One continuous shaft, the way drilling actually carves. Two separate
-	# circles at the two cell centres would leave a 2px seam of rock between
-	# them (30 + 30 < the 64px between centres) -- and the water, correctly,
-	# could never cross it. That seam is what made this check fail in CI.
-	var p := w.cell_to_world(top_cell)
-	while p.y <= w.cell_to_world(below_cell).y:
+	var center := w.cell_to_world(Vector2i(11, 8))  # both in simulation reach
+	_check(w.cell_has_water(top_cell) and w.cell_has_water(pool[0]), "authored water is seeded")
+	_check(not w.cell_has_water(below_cell), "cell below the pocket starts dry")
+
+	var fell := false
+	var settled := false
+	var ticks := 0
+	var t0 := Time.get_ticks_usec()
+	while ticks < 1500 and not (fell and settled):
+		w.step_water_simulation(center, MineWorld.WATER_SIM_INTERVAL)
+		ticks += 1
+		fell = fell or w.cell_has_water(below_cell)
+		settled = true
+		for c in pool:
+			if w.cell_has_water(c) and not w._water_settled.has(c):
+				settled = false
+				break
+	# Not a check: a number to watch, since this runs every 50ms in the browser.
+	print("  water sim: %d ticks, %.2f ms per tick" % [
+		ticks, (Time.get_ticks_usec() - t0) / 1000.0 / ticks])
+	_check(fell, "water falls into space opened below it, even with a resting pool in view")
+	_check(settled, "a pool with nowhere to go falls asleep")
+
+	# Drill down from the pool's floor. Asleep, the pool must still notice.
+	# Row 15 is the check, not 14: the rounded cave edge already lets a little
+	# water into the top of row 14 before any drilling.
+	var shaft_cell := Vector2i(6, 15)
+	_check(not w.cell_has_water(shaft_cell), "rock under the pool starts dry")
+	var p := w.cell_to_world(Vector2i(6, 13))
+	while p.y <= w.cell_to_world(Vector2i(6, 16)).y:
 		w.carve_circle(p, 26.0, 5)
 		p.y += 8.0
-	w._fill_water_cell(top_cell)
-	_check(not w._water_cells.has(below_cell), "cell below starts dry")
-	for i in 30:
-		w.step_water_simulation(w.cell_to_world(top_cell), MineWorld.WATER_SIM_INTERVAL)
-	_check(w._water_cells.has(below_cell),
-		"water spreads into an opened cell below after simulating (falls, doesn't sit fixed)")
+	_check(not w._water_settled.has(Vector2i(6, 13)), "drilling beneath still water wakes it")
+	var drained := false
+	for i in 600:
+		w.step_water_simulation(center, MineWorld.WATER_SIM_INTERVAL)
+		if w.cell_has_water(shaft_cell):
+			drained = true
+			break
+	_check(drained, "woken water pours down the new shaft")
 	w.queue_free()
 
 

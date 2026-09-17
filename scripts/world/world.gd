@@ -25,6 +25,7 @@ const WATER_COLOR := Color(0.25, 0.48, 0.85, 0.85)
 const WATER_SIM_INTERVAL := 0.05      # simulate at 20Hz, not every render frame
 const WATER_SIM_REACH_CELLS := 7      # ~ one screen's worth of tiles each direction
 const WATER_SIM_BUDGET := 260         # water pixels actually moved per simulation tick
+const WATER_SIM_SCAN := 4096          # pixels examined per tick: the CPU cap (4 cells' worth)
 
 var seed_value := 0
 var width := 32
@@ -54,6 +55,10 @@ var _water_sprites := {}              # chunk -> Sprite2D (loaded chunks only)
 var _water_dirty := {}                # chunk -> true (water texture needs re-upload)
 var _water_seeded_chunks := {}        # chunk -> true (initial water placed once)
 var _water_cells := {}                # Vector2i cell -> true (coarse index: has water pixels)
+var _water_settled := {}              # Vector2i cell -> true: still water, skipped until woken
+var _flow_blocked := false            # out-param of _flow_water_px (see there)
+var _water_scan_left := 0             # this tick's remaining WATER_SIM_SCAN
+var _water_scan_resume := 0           # awake-cell index the next tick starts from
 var _water_sim_accum := 0.0
 
 # ---- authored levels ----
@@ -84,9 +89,11 @@ func setup(world_seed: int) -> void:
 			_chunk_specials, _mined, _opened_chests, _erosion, _info_cache,
 			_carved_cells, _visited_chunks, _depot_defs,
 			_water_images, _water_sprites, _water_dirty, _water_seeded_chunks, _water_cells,
+			_water_settled,
 			_authored]:
 		d.clear()
 	_water_sim_accum = 0.0
+	_water_scan_resume = 0
 	is_authored = false
 
 
@@ -214,6 +221,15 @@ func _unload_chunk(chunk: int) -> void:
 	_water_images.erase(chunk)
 	_water_dirty.erase(chunk)
 	_water_seeded_chunks.erase(chunk)
+	# Water that had flowed here is gone with the image (it re-seeds from the
+	# generated cells). Drop its index entries too, or cell_has_water -- which the
+	# '?' tips read -- would go on reporting water in cells that are now dry, and a
+	# settled entry would never be revisited to clean itself up.
+	for y in chunk_h:
+		for x in width:
+			var c := Vector2i(x, chunk * chunk_h + y)
+			_water_cells.erase(c)
+			_water_settled.erase(c)
 
 
 func _roll_spawns(chunk: int) -> void:
@@ -433,6 +449,11 @@ func carve_circle(center: Vector2, radius: float, bit: int) -> Dictionary:
 				_erosion[cell] = int(_erosion.get(cell, 0)) + 1
 				if _erosion[cell] >= int(CELL_IMG * CELL_IMG * DUG_THRESHOLD_FRAC):
 					_carved_cells[cell] = true
+	# Drilling next to still water must wake it, or a sleeping pool would ignore
+	# the tunnel just opened beneath it -- the one thing water has to react to.
+	if removed > 0:
+		for touched: Vector2i in cell_cache:
+			_wake_water_near(touched)
 	return {"removed": removed, "hard": hard, "blocked_tier": blocked_tier,
 		"ores": ores, "chests": chests}
 
@@ -446,6 +467,7 @@ func _clear_cell_pixels(cell: Vector2i) -> void:
 		for px in range(x0, x0 + CELL_IMG):
 			img.set_pixel(px, py, Color(0, 0, 0, 0))
 	_dirty[chunk] = true
+	_wake_water_near(cell)
 
 
 # ------------------------------------------------------------ cell content
@@ -775,6 +797,8 @@ func _clear_water_cell(cell: Vector2i) -> void:
 		for px in range(x0, x0 + CELL_IMG):
 			img.set_pixel(px, py, Color(0, 0, 0, 0))
 	_water_cells.erase(cell)
+	_water_settled.erase(cell)
+	_wake_water_near(cell)  # restored rock may change what neighbours can do
 	_water_dirty[chunk] = true
 
 
@@ -826,6 +850,7 @@ func _fill_water_cell(cell: Vector2i) -> void:
 			img.set_pixel(px, py, WATER_COLOR)
 	_water_dirty[chunk] = true
 	_water_cells[cell] = true
+	_water_settled.erase(cell)
 
 
 ## gpx/gpy are GLOBAL image-px coordinates (gpx spans the whole world width
@@ -852,26 +877,53 @@ func _set_water_px(gpx: int, gpy: int, present: bool) -> void:
 	_water_dirty[chunk] = true
 
 
-## A pixel water can move into: not solid rock, and not already water there.
+## A pixel water can move into: not already water there, and not solid rock.
+## Water is checked first: inside a pool nearly every neighbour is water, and
+## that check is much cheaper than resolving the cell for is_solid_px.
 func _open_for_water(gpx: int, gpy: int) -> bool:
 	if gpx < 0 or gpx >= width * CELL_IMG or gpy < 0 or gpy >= max_depth_row * CELL_IMG:
 		return false
-	if is_solid_px(Vector2(gpx * SCALE + 1, gpy * SCALE + 1)):
+	if _has_water_px(gpx, gpy):
 		return false
-	return not _has_water_px(gpx, gpy)
+	return not is_solid_px(Vector2(gpx * SCALE + 1, gpy * SCALE + 1))
 
 
 func _move_water_px(fx: int, fy: int, tx: int, ty: int) -> void:
 	_set_water_px(fx, fy, false)
 	_set_water_px(tx, ty, true)
-	var tcell := Vector2i(floori(tx / float(CELL_IMG)), floori(ty / float(CELL_IMG)))
-	_water_cells[tcell] = true
+	_water_cells[Vector2i(floori(tx / float(CELL_IMG)), floori(ty / float(CELL_IMG)))] = true
+	# Wake only the cells this move can affect, not every cell around it: in a
+	# draining pool, waking whole 3x3 blocks keeps still cells cycling awake and
+	# eats the scan for the water that's actually moving.
+	_wake_water_px(tx, ty)          # the pixel itself needs its next turn
+	_wake_water_px(tx, ty + 1)      # water now presses on the pixel below
+	_wake_water_px(fx, fy - 1)      # the space it left: straight down into it,
+	_wake_water_px(fx - 1, fy - 1)  # diagonally down into it,
+	_wake_water_px(fx + 1, fy - 1)
+	_wake_water_px(fx - 1, fy)      # or sideways into it
+	_wake_water_px(fx + 1, fy)
+
+
+func _wake_water_px(gpx: int, gpy: int) -> void:
+	_water_settled.erase(Vector2i(floori(gpx / float(CELL_IMG)), floori(gpy / float(CELL_IMG))))
+
+
+## Wake the 3x3 block of cells around `cell`. Sleeping is only safe because
+## anything that could give still water somewhere to go wakes it: carving and
+## clearing cells call this, and moving water calls _wake_water_px.
+func _wake_water_near(cell: Vector2i) -> void:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			_water_settled.erase(cell + Vector2i(dx, dy))
 
 
 ## Falling-sand rule for one pixel: straight down, else diagonal down, else a
-## slow sideways spread if fully blocked below. Returns where it ended up
-## (same position if it couldn't move).
+## slow sideways spread when pressed from above. Returns where it ended up
+## (same position if it didn't move). Sets _flow_blocked when the pixel had nowhere to go at all -- which
+## differs from "could have spread sideways but the dice said not this tick".
+## Only a truly blocked pixel may let its cell fall asleep.
 func _flow_water_px(gpx: int, gpy: int) -> Vector2i:
+	_flow_blocked = false
 	if _open_for_water(gpx, gpy + 1):
 		_move_water_px(gpx, gpy, gpx, gpy + 1)
 		return Vector2i(gpx, gpy + 1)
@@ -880,11 +932,19 @@ func _flow_water_px(gpx: int, gpy: int) -> Vector2i:
 		if _open_for_water(gpx + d, gpy + 1):
 			_move_water_px(gpx, gpy, gpx + d, gpy + 1)
 			return Vector2i(gpx + d, gpy + 1)
-	if randf() < 0.35:  # slow spread, not instant leveling
+	# Sideways only under pressure, i.e. with water resting on top. Without that
+	# rule a surface with one pixel of room shuffles back and forth forever: the
+	# random walk never ends, so the pool never counts as still and never
+	# sleeps. Level differences of two pixels or more still even out through
+	# the diagonal step above, so pools spread and drain the same way.
+	if _has_water_px(gpx, gpy - 1):
 		for d in order:
 			if _open_for_water(gpx + d, gpy):
-				_move_water_px(gpx, gpy, gpx + d, gpy)
-				return Vector2i(gpx + d, gpy)
+				if randf() < 0.35:  # slow spread, not instant leveling
+					_move_water_px(gpx, gpy, gpx + d, gpy)
+					return Vector2i(gpx + d, gpy)
+				return Vector2i(gpx, gpy)  # could move, just didn't this tick
+	_flow_blocked = true
 	return Vector2i(gpx, gpy)
 
 
@@ -892,60 +952,90 @@ func _flow_water_px(gpx: int, gpy: int) -> Vector2i:
 ## that falls doesn't get reprocessed as "new" water further down the same
 ## tick). `moved` tracks destinations already touched this tick across the
 ## whole step_water_simulation() call. Returns the remaining budget.
+##
+## The budget is spent per pixel that actually MOVES, not per pixel looked at.
+## Charging for still water was a real bug: a resting pocket is ~1024 pixels,
+## more than the whole per-tick budget, so it exhausted the budget, never
+## finished a scan, and starved every cell after it in scan order -- forever.
+## Water you drilled under could simply never fall. Now a cell where nothing
+## can move goes to sleep (_water_settled) and costs nothing until woken.
 func _simulate_water_cell(cell: Vector2i, budget: int, moved: Dictionary) -> int:
 	var x0 := cell.x * CELL_IMG
 	var y0 := cell.y * CELL_IMG
 	var any_water := false
-	var fully_scanned := true
+	var active := false
+	_water_scan_left -= CELL_IMG * CELL_IMG
 	for ly in range(CELL_IMG - 1, -1, -1):
 		var gpy := y0 + ly
 		for lx in range(CELL_IMG):
 			var gpx := x0 + lx
 			var key := Vector2i(gpx, gpy)
 			if moved.has(key):
+				# Arrived this tick; it gets its own turn next tick.
 				any_water = true
+				active = true
 				continue
 			if not _has_water_px(gpx, gpy):
 				continue
-			if budget <= 0:
-				fully_scanned = false
-				any_water = true
-				continue
-			budget -= 1
-			moved[_flow_water_px(gpx, gpy)] = true
 			any_water = true
-	if fully_scanned and not any_water:
+			var to := _flow_water_px(gpx, gpy)
+			if to != key:
+				moved[to] = true
+				active = true
+				budget -= 1
+				if budget <= 0:
+					return budget  # mid-cell: neither emptied nor settled; resume next tick
+			elif not _flow_blocked:
+				active = true
+	if not any_water:
 		_water_cells.erase(cell)
+		_water_settled.erase(cell)
+	elif not active:
+		_water_settled[cell] = true
 	return budget
 
 
 ## Advance the water simulation near `center` (the player's world position).
-## Throttled to WATER_SIM_INTERVAL and budget-capped so a large flooded area
-## opening at once spreads its cost over several ticks instead of spiking.
-## Called externally (from game.gd, alongside stream_around) rather than from
-## MineWorld's own _process, since MineWorld deliberately holds no reference
-## to the player.
+## Throttled to WATER_SIM_INTERVAL and capped two ways: WATER_SIM_BUDGET pixel
+## moves, and WATER_SIM_SCAN pixels examined. Called externally (from game.gd,
+## alongside stream_around) rather than from MineWorld's own _process, since
+## MineWorld deliberately holds no reference to the player.
+##
+## When a cap cuts a tick short, the next tick picks up at the cell after the
+## one it stopped in, rather than starting from the bottom of the window again.
+## Restarting from the same place every tick is exactly how a cap starves the
+## cells at the far end of the scan; round robin gives every awake cell a turn.
 func step_water_simulation(center: Vector2, delta: float) -> void:
 	_water_sim_accum += delta
 	if _water_sim_accum < WATER_SIM_INTERVAL:
 		return
 	_water_sim_accum = 0.0
 	var ccell := world_to_cell(center)
-	var budget := WATER_SIM_BUDGET
-	var moved := {}
-	# Bottom of the window first, same reasoning as within a single cell.
+	# Awake cells in the window, bottom row first (same reasoning as within a
+	# single cell: lower water gets out of the way before upper water looks).
+	var awake: Array[Vector2i] = []
 	for dy in range(WATER_SIM_REACH_CELLS, -WATER_SIM_REACH_CELLS - 1, -1):
-		if budget <= 0:
-			break
 		var y := ccell.y + dy
 		if y < 0 or y >= max_depth_row:
 			continue
 		for dx in range(-WATER_SIM_REACH_CELLS, WATER_SIM_REACH_CELLS + 1):
-			if budget <= 0:
-				break
 			var cell := Vector2i(ccell.x + dx, y)
-			if _water_cells.has(cell):
-				budget = _simulate_water_cell(cell, budget, moved)
+			if _water_cells.has(cell) and not _water_settled.has(cell):
+				awake.append(cell)
+	if awake.is_empty():
+		_water_scan_resume = 0
+		return
+	var budget := WATER_SIM_BUDGET
+	_water_scan_left = WATER_SIM_SCAN
+	var moved := {}
+	var start := _water_scan_resume % awake.size()
+	_water_scan_resume = 0
+	for i in awake.size():
+		var idx := (start + i) % awake.size()
+		budget = _simulate_water_cell(awake[idx], budget, moved)
+		if budget <= 0 or _water_scan_left <= 0:
+			_water_scan_resume = idx + 1
+			break
 
 
 ## Whether any water currently sits in this cell. Cheaper than is_water_px for
