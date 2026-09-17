@@ -603,8 +603,14 @@ func _test_water_sim() -> void:
 	w.stream_around(0)
 	var top_cell := Vector2i(16, 4)
 	var below_cell := Vector2i(16, 5)
-	w.carve_circle(w.cell_to_world(top_cell), 30.0, 5)
-	w.carve_circle(w.cell_to_world(below_cell), 30.0, 5)
+	# One continuous shaft, the way drilling actually carves. Two separate
+	# circles at the two cell centres would leave a 2px seam of rock between
+	# them (30 + 30 < the 64px between centres) -- and the water, correctly,
+	# could never cross it. That seam is what made this check fail in CI.
+	var p := w.cell_to_world(top_cell)
+	while p.y <= w.cell_to_world(below_cell).y:
+		w.carve_circle(p, 26.0, 5)
+		p.y += 8.0
 	w._fill_water_cell(top_cell)
 	_check(not w._water_cells.has(below_cell), "cell below starts dry")
 	for i in 30:
