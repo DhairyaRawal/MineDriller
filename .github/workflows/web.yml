@@ -50,8 +50,37 @@ jobs:
           godot --headless --import || true
           godot --headless --import || true
 
+      # Actions logs need a GitHub sign-in to read, even on a public repo, but
+      # annotations don't. So failures are republished as annotations, visible
+      # on the run page (and via the API) without logging in. Godot script
+      # errors come first: they mean the game may not load at all, which
+      # matters more than any single failed check.
       - name: Run tests
-        run: godot --headless --path . res://tests/test_runner.tscn
+        run: |
+          set +e
+          godot --headless --path . res://tests/test_runner.tscn > test.log 2>&1
+          code=$?
+          set -e
+          cat test.log
+          {
+            grep -A1 -E "SCRIPT ERROR|Parse Error" test.log
+            grep "FAIL:" test.log
+            grep -E "[0-9]+ checks, [0-9]+ failures" test.log
+            grep -A1 "^ERROR:" test.log | head -24
+          } | grep -v "^--$" | awk '!seen[$0]++' > problems.txt || true
+          if [ "$code" -ne 0 ] && [ ! -s problems.txt ]; then
+            tail -20 test.log > problems.txt   # crashed without a recognisable error
+          fi
+          if [ -s problems.txt ]; then
+            split -l 8 problems.txt chunk_
+            n=0
+            for f in chunk_*; do
+              n=$((n + 1)); [ "$n" -gt 10 ] && break   # GitHub keeps 10 errors per step
+              msg=$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' "$f" | awk 'BEGIN{ORS="%0A"} {print}')
+              echo "::error title=Tests (part $n)::$msg"
+            done
+          fi
+          exit $code
 
   deploy:
     runs-on: ubuntu-latest
