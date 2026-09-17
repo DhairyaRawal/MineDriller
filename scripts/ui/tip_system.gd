@@ -25,7 +25,7 @@ const MAX_BUBBLES := 3
 ## Relevance is re-evaluated a few times a second, not every frame -- the scan
 ## is ~120 cells plus enemies, and this also keeps bubbles from flickering.
 const RESCAN_INTERVAL := 0.15
-const BUBBLE_SIZE := 46.0
+const BUBBLE_SIZE := 36.0
 ## How long the cursor has to rest on a '?' before hovering counts as reading
 ## it. Tips float over moving enemies, so the cursor brushes across bubbles by
 ## accident all the time; without a threshold they'd retire unread.
@@ -221,15 +221,15 @@ func _make_bubble(id: String) -> Button:
 	btn.size = Vector2(BUBBLE_SIZE, BUBBLE_SIZE)
 	btn.custom_minimum_size = btn.size
 	btn.pivot_offset = btn.size * 0.5  # retire shrink collapses to the centre, not a corner
-	btn.add_theme_font_size_override("font_size", 28)
+	btn.add_theme_font_size_override("font_size", 21)
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_color_override("font_hover_color", Color.WHITE)
-	btn.add_theme_constant_override("outline_size", 5)
+	btn.add_theme_constant_override("outline_size", 4)
 	btn.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	var idle := UIKit.flat_style(fill, r)
 	idle.set_content_margin_all(0)
 	idle.border_color = Color(1, 1, 1, 0.85)
-	idle.set_border_width_all(3)
+	idle.set_border_width_all(2)
 	var hover := idle.duplicate() as StyleBoxFlat
 	hover.bg_color = fill.lightened(0.2)
 	btn.add_theme_stylebox_override("normal", idle)
@@ -289,26 +289,26 @@ func _position_bubbles() -> void:
 func _build_hover_panel() -> void:
 	_hover_panel = UIKit.panel(Color(0.10, 0.08, 0.16, 0.96), 12)
 	_hover_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE  # never block the bubble
-	_hover_panel.custom_minimum_size = Vector2(360, 0)
+	_hover_panel.custom_minimum_size = Vector2(300, 0)
 	_hover_panel.visible = false
 	var col := UIKit.vbox(6)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hover_panel.add_child(col)
-	_hover_title = UIKit.label("", 22, UIKit.ACCENT)
+	_hover_title = UIKit.label("", 17, UIKit.ACCENT)
 	_hover_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_hover_title)
-	_hover_body = UIKit.label("", 18)
+	_hover_body = UIKit.label("", 15)
 	_hover_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hover_body.custom_minimum_size = Vector2(336, 0)
+	_hover_body.custom_minimum_size = Vector2(276, 0)
 	_hover_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_hover_body)
 	# Say up front that the '?' goes away, and where the tip lives afterwards --
 	# otherwise a vanished bubble looks like a bug.
 	var hint := UIKit.label(
 		"This ? won't show again once read. Re-read it any time: pause > GUIDE.",
-		14, UIKit.TEXT_DIM)
+		12, UIKit.TEXT_DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size = Vector2(336, 0)
+	hint.custom_minimum_size = Vector2(276, 0)
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(hint)
 	add_child(_hover_panel)

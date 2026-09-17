@@ -6,7 +6,7 @@ extends VBoxContainer
 
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 18)
+	add_theme_constant_override("separation", 8)
 	add_child(_slider_row("Music", SettingsManager.music_volume,
 		func(v: float) -> void:
 			SettingsManager.music_volume = v
@@ -34,15 +34,15 @@ func _ready() -> void:
 
 func _slider_row(label_text: String, initial: float, on_change: Callable) -> Control:
 	var row := UIKit.hbox(16)
-	var lbl := UIKit.label(label_text, 26)
-	lbl.custom_minimum_size = Vector2(220, 0)
+	var lbl := UIKit.label(label_text, 17)
+	lbl.custom_minimum_size = Vector2(130, 0)
 	row.add_child(lbl)
 	var slider := HSlider.new()
 	slider.min_value = 0.0
 	slider.max_value = 1.0
 	slider.step = 0.05
 	slider.value = initial
-	slider.custom_minimum_size = Vector2(280, 48)
+	slider.custom_minimum_size = Vector2(200, 32)
 	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	slider.value_changed.connect(on_change)
 	row.add_child(slider)
@@ -51,12 +51,12 @@ func _slider_row(label_text: String, initial: float, on_change: Callable) -> Con
 
 func _toggle_row(label_text: String, initial: bool, on_change: Callable) -> Control:
 	var row := UIKit.hbox(16)
-	var lbl := UIKit.label(label_text, 26)
+	var lbl := UIKit.label(label_text, 17)
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(lbl)
 	var check := CheckButton.new()
 	check.button_pressed = initial
-	check.custom_minimum_size = Vector2(100, 56)
+	check.custom_minimum_size = Vector2(60, 32)
 	check.toggled.connect(on_change)
 	row.add_child(check)
 	return row

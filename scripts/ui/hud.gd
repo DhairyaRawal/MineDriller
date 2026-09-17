@@ -21,6 +21,8 @@ var _target_label: Label
 var _target_bar: ProgressBar
 var _hull_box: HBoxContainer
 var _heat_bar: HeatBar
+var _heat_caption: Label
+var _top: PanelContainer
 var _toast_label: Label
 var _warning_rect: ColorRect
 var _shop_button: Button
@@ -114,73 +116,84 @@ func _build_top() -> void:
 	# Hierarchy by urgency: hull and cargo (things that end or cap a run) sit
 	# right of centre at full contrast; money and ether are progress readouts,
 	# so they stay quiet. Positions never move -- only values animate.
-	var top := UIKit.panel(Color(0.055, 0.05, 0.085, 0.88), 0)
-	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	add_child(top)
-	var col := UIKit.vbox(4)
-	top.add_child(col)
+	_top = PanelContainer.new()
+	_top.add_theme_stylebox_override("panel",
+		UIKit.flat_style(Color(0.055, 0.05, 0.085, 0.88), 0, 16, 6))
+	_top.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	add_child(_top)
+	# Everything below the strip is placed from its real height, so resizing
+	# the strip can never leave the heat bar overlapping it or floating off.
+	_top.resized.connect(_place_below_top)
+	var col := UIKit.vbox(3)
+	_top.add_child(col)
 
-	var row1 := UIKit.hbox(18)
+	var row1 := UIKit.hbox(16)
 	col.add_child(row1)
-	_money_label = UIKit.legible(UIKit.label("0 $", 32, UIKit.GOOD))
+	_money_label = UIKit.legible(UIKit.label("0 $", 24, UIKit.GOOD))
 	row1.add_child(_money_label)
-	_ether_label = UIKit.legible(UIKit.label("0 ether", 24, UIKit.ETHER), 4)
+	_ether_label = UIKit.legible(UIKit.label("0 ether", 17, UIKit.ETHER), 3)
 	_ether_label.modulate.a = 0.85
+	_ether_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row1.add_child(_ether_label)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row1.add_child(spacer)
-	_cargo_label = UIKit.legible(UIKit.label("Cargo 0/8", 26))
+	_cargo_label = UIKit.legible(UIKit.label("Cargo 0/8", 19))
+	_cargo_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row1.add_child(_cargo_label)
-	_hull_box = UIKit.hbox(5)
+	_hull_box = UIKit.hbox(4)
+	_hull_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row1.add_child(_hull_box)
 	# Rocket ammo lives in the status strip now that the firing pad is gone:
 	# on web it's fired with R/Q, so this is a readout, not a control.
-	_rocket_label = UIKit.legible(UIKit.label("↗ 5", 26, UIKit.ETHER))
+	_rocket_label = UIKit.legible(UIKit.label("↗ 5", 19, UIKit.ETHER))
+	_rocket_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row1.add_child(_rocket_label)
 	# Always available (unlike SHOP/DEPOT, which only appear in context) --
 	# checking where you've been shouldn't require being somewhere specific.
-	var map_btn := UIKit.button("MAP", 20)
+	var map_btn := UIKit.button("MAP", 15)
 	map_btn.focus_mode = Control.FOCUS_NONE  # see _build_context_buttons
-	map_btn.custom_minimum_size = Vector2(76, 64)
+	map_btn.custom_minimum_size = Vector2(60, 34)
 	map_btn.pressed.connect(func() -> void: map_pressed.emit())
 	row1.add_child(map_btn)
-	var pause_btn := UIKit.button("II", 26)
+	var pause_btn := UIKit.button("II", 16)
 	pause_btn.focus_mode = Control.FOCUS_NONE
-	pause_btn.custom_minimum_size = Vector2(76, 64)
+	pause_btn.custom_minimum_size = Vector2(44, 34)
 	pause_btn.pressed.connect(func() -> void: pause_pressed.emit())
 	row1.add_child(pause_btn)
 
-	var row2 := UIKit.hbox(18)
+	var row2 := UIKit.hbox(14)
 	col.add_child(row2)
-	_depth_label = UIKit.legible(UIKit.label("0 km", 26))
+	_depth_label = UIKit.legible(UIKit.label("0 km", 18))
 	row2.add_child(_depth_label)
-	_layer_label = UIKit.legible(UIKit.label("Surface", 24, UIKit.TEXT_DIM), 4)
+	_layer_label = UIKit.legible(UIKit.label("Surface", 16, UIKit.TEXT_DIM), 3)
+	_layer_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row2.add_child(_layer_label)
 	var spacer2 := Control.new()
 	spacer2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row2.add_child(spacer2)
-	_target_label = UIKit.legible(UIKit.label("", 22, UIKit.TEXT_DIM), 4)
+	_target_label = UIKit.legible(UIKit.label("", 15, UIKit.TEXT_DIM), 3)
+	_target_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row2.add_child(_target_label)
 
 	_target_bar = UIKit.progress(UIKit.ACCENT)
-	_target_bar.custom_minimum_size = Vector2(0, 10)
+	_target_bar.custom_minimum_size = Vector2(0, 6)
 	col.add_child(_target_bar)
 
 
 func _build_heat() -> void:
 	_heat_bar = HeatBar.new()
 	_heat_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_heat_bar.offset_top = 128.0
+	_heat_bar.offset_top = 86.0  # provisional; _place_below_top sets the real spot
 	_heat_bar.offset_left = 16.0
 	_heat_bar.offset_right = -16.0
-	_heat_bar.offset_bottom = 154.0
+	_heat_bar.offset_bottom = 104.0
 	add_child(_heat_bar)
-	var heat_caption := UIKit.legible(UIKit.label("DRILL HEAT", 16, UIKit.TEXT_DIM), 4)
-	heat_caption.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	heat_caption.offset_top = 156.0
-	heat_caption.offset_left = 16.0
-	add_child(heat_caption)
+	_heat_caption = UIKit.legible(UIKit.label("DRILL HEAT", 12, UIKit.TEXT_DIM), 3)
+	_heat_caption.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_heat_caption.offset_top = 106.0
+	_heat_caption.offset_left = 16.0
+	add_child(_heat_caption)
 
 	_warning_rect = ColorRect.new()
 	_warning_rect.color = Color(1, 0, 0, 0)
@@ -189,34 +202,46 @@ func _build_heat() -> void:
 	add_child(_warning_rect)
 
 
+## Heat bar, its caption and the toast line hang off the bottom of the status
+## strip, wherever that ends up.
+func _place_below_top() -> void:
+	if _heat_bar == null or _toast_label == null or _top.size.y <= 0.0:
+		return  # not laid out yet, or laid out before the rest of the HUD existed
+	var y := _top.size.y + 6.0
+	_heat_bar.offset_top = y
+	_heat_bar.offset_bottom = y + 18.0
+	_heat_caption.offset_top = y + 20.0
+	_toast_label.offset_top = y + 52.0
+
+
 ## Web build: keyboard/mouse only, so there are no on-screen D-pads or rocket
 ## pad. What remains is the two contextual buttons, which are genuine mouse
 ## targets rather than thumb controls, parked in the bottom-right corner so
 ## nothing overlaps the play area.
 func _build_context_buttons() -> void:
-	_shop_button = UIKit.button("SHOP", 28, true)
+	_shop_button = UIKit.button("SHOP", 20, true)
 	# In-game buttons must never take keyboard focus. A focused Button fires on
 	# ui_accept, which includes Space -- and Space is also jump. So clicking
 	# SHOP (or MAP, or pause) and then jumping would reopen that screen.
 	_shop_button.focus_mode = Control.FOCUS_NONE
 	_shop_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_shop_button.offset_left = -232.0
-	_shop_button.offset_right = -24.0
-	_shop_button.offset_top = -92.0
-	_shop_button.offset_bottom = -24.0
+	_shop_button.offset_left = -184.0
+	_shop_button.offset_right = -20.0
+	_shop_button.offset_top = -66.0
+	_shop_button.offset_bottom = -20.0
 	_shop_button.visible = false
 	_shop_button.pressed.connect(func() -> void: shop_pressed.emit())
 	add_child(_shop_button)
 
 	# Stacked directly above SHOP; the two are never relevant at the same time,
 	# but stacking keeps either from jumping position when both are possible.
-	_depot_button = UIKit.button("DEPOT", 28, true)
+	_depot_button = UIKit.button("DEPOT", 20, true)
 	_depot_button.focus_mode = Control.FOCUS_NONE
 	_depot_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_depot_button.offset_left = -232.0
-	_depot_button.offset_right = -24.0
-	_depot_button.offset_top = -172.0
-	_depot_button.offset_bottom = -104.0
+	_depot_button.offset_left = -184.0
+	_depot_button.offset_right = -20.0
+	_depot_button.offset_top = -122.0
+	_depot_button.offset_bottom = -76.0
 	_depot_button.visible = false
 	_depot_button.pressed.connect(func() -> void: depot_pressed.emit())
 	add_child(_depot_button)
@@ -224,15 +249,15 @@ func _build_context_buttons() -> void:
 	# Tutorial objective. Bottom-centre rather than near the top: toasts already
 	# own the top of the screen, and a quest tracker that a toast can cover is
 	# useless. Clear of the SHOP/DEPOT stack in the bottom-right corner.
-	_objective_panel = UIKit.panel(Color(0.10, 0.08, 0.16, 0.92), 14)
+	_objective_panel = UIKit.panel(Color(0.10, 0.08, 0.16, 0.92), 12)
 	_objective_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_objective_panel.offset_left = -390.0
-	_objective_panel.offset_right = 390.0
-	_objective_panel.offset_top = -92.0
-	_objective_panel.offset_bottom = -24.0
+	_objective_panel.offset_left = -330.0
+	_objective_panel.offset_right = 330.0
+	_objective_panel.offset_top = -66.0
+	_objective_panel.offset_bottom = -20.0
 	_objective_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_objective_panel.visible = false
-	_objective_label = UIKit.legible(UIKit.label("", 22, UIKit.ACCENT), 4)
+	_objective_label = UIKit.legible(UIKit.label("", 17, UIKit.ACCENT), 3)
 	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_objective_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_objective_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -241,10 +266,10 @@ func _build_context_buttons() -> void:
 
 
 func _build_toast() -> void:
-	_toast_label = UIKit.legible(UIKit.label("", 28, Color.WHITE), 6)
+	_toast_label = UIKit.legible(UIKit.label("", 21, Color.WHITE), 5)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_toast_label.offset_top = 196.0
+	_toast_label.offset_top = 150.0  # provisional; _place_below_top sets the real spot
 	_toast_label.offset_left = -340.0
 	_toast_label.offset_right = 340.0
 	_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -284,7 +309,7 @@ func _on_hull_changed(hp: int, max_hp: int) -> void:
 		child.queue_free()
 	for i in max_hp:
 		var seg := ColorRect.new()
-		seg.custom_minimum_size = Vector2(18, 26)
+		seg.custom_minimum_size = Vector2(12, 18)
 		seg.color = UIKit.BAD if i < hp else Color(0.25, 0.22, 0.26)
 		_hull_box.add_child(seg)
 

@@ -25,6 +25,7 @@ func _ready() -> void:
 	_test_terrain_physics()
 	_test_tunnel_healing()
 	_test_water_sim()
+	await _test_ui_fits_screen()
 	await _test_end_to_end_drilling()
 	_finish()
 
@@ -658,6 +659,136 @@ func _test_water_sim() -> void:
 			break
 	_check(drained, "woken water pours down the new shaft")
 	w.queue_free()
+
+
+## The web layout's promise: every page fits a 1280x720 screen with nothing to
+## scroll. Builds each screen for real, filled with the longest content it can
+## show (every ore discovered, every layer reached, a full cargo bay, every
+## tip), and checks that no control lands off-screen. Pages the player flips
+## through (codex, guide) are checked on every page.
+func _test_ui_fits_screen() -> void:
+	GameState.from_dict({})
+	GameState.tutorial_done = true
+	GameState.codex_discovered = Balance.ores.keys()
+	GameState.stats["deepest_km"] = 99999.0
+	var view := get_viewport().get_visible_rect().size
+	print("  ui fit check at %dx%d" % [view.x, view.y])
+
+	var problems: Array[String] = []
+	for ore_id: String in Balance.ores:
+		var card := DiscoveryCard.new(ore_id)
+		add_child(card)
+		# Let the pop-in finish: mid-tween the card is scaled down and would
+		# look like it fits when it doesn't.
+		await get_tree().create_timer(0.4, true).timeout
+		_note_offscreen(card, "card " + ore_id, problems)
+		card.dismiss()
+	_check(problems.is_empty(), "every Discovery Card fits the screen " + ", ".join(PackedStringArray(problems)))
+
+	problems.clear()
+	for tip_id: String in Balance.tips:
+		var tip := TipCard.new(tip_id)
+		add_child(tip)
+		await _frames(3)
+		_note_offscreen(tip, "tip " + tip_id, problems)
+		tip.dismiss()
+	_check(problems.is_empty(), "every tip card fits the screen " + ", ".join(PackedStringArray(problems)))
+
+	var menu: Control = load("res://scenes/main_menu.tscn").instantiate()
+	add_child(menu)
+	await _frames(3)
+	problems.clear()
+	_note_offscreen(menu, "menu", problems)
+	for panel: String in ["_show_codex", "_show_achievements", "_show_stats", "_show_settings"]:
+		menu.call(panel)
+		await _frames(3)
+		_note_offscreen(menu, panel, problems)
+		if panel == "_show_codex":
+			await _flip_pages(menu, "codex", problems)
+	_check(problems.is_empty(), "main menu and its panels fit the screen " + ", ".join(PackedStringArray(problems)))
+	menu.queue_free()
+
+	GameState.cargo.clear()
+	var bin := {}
+	for ore_id: String in Balance.ores:
+		GameState.cargo.append(ore_id)
+		bin[ore_id] = 3
+	GameState.depot_storage["fit_test"] = bin
+	var world := MineWorld.new()
+	add_child(world)
+	world.setup(1)
+	var breakdown := {}
+	for ore_id: String in Balance.ores:
+		breakdown[ore_id] = 4
+	problems.clear()
+	var screens: Array = [
+		["shop", ShopScreen.new()], ["workshop", CosmeticsScreen.new()],
+		["depot", DepotScreen.new("fit_test")], ["map", MapScreen.new(world, Vector2.ZERO)],
+		["pause", PauseMenu.new()], ["quiz", FieldQuiz.new()],
+		["bust", BustScreen.new("Your drill overheated and blew apart!")],
+		["sell", SellPopup.new(9999, 12, breakdown)], ["guide", GuideScreen.new()],
+	]
+	for entry: Array in screens:
+		var screen: Node = entry[1]
+		add_child(screen)
+		await _frames(3)
+		_note_offscreen(screen, String(entry[0]), problems)
+		if entry[0] == "guide":
+			await _flip_pages(screen, "guide", problems)
+		elif entry[0] == "quiz":
+			var quiz := screen as FieldQuiz
+			quiz._answer(false, quiz._pool[0]["q"])  # the explanation view is the tallest
+			await _frames(3)
+			_note_offscreen(screen, "quiz answer", problems)
+		screen.queue_free()
+		get_tree().paused = false  # depot and map pause the game while open
+	_check(problems.is_empty(), "shop, depot, map, pause, quiz and popups fit the screen "
+		+ ", ".join(PackedStringArray(problems)))
+	world.queue_free()
+	GameState.from_dict({})
+	await _frames(2)
+
+
+func _frames(count: int) -> void:
+	for i in count:
+		await get_tree().process_frame
+
+
+## Click through every page of a list-and-detail screen, checking each page.
+func _flip_pages(root: Node, what: String, problems: Array[String]) -> void:
+	var pages := 0
+	for b: Button in _all_of(root, "Button"):
+		if not b.toggle_mode:
+			continue
+		b.button_pressed = true
+		b.pressed.emit()
+		await _frames(2)
+		_note_offscreen(root, "%s page '%s'" % [what, b.text], problems)
+		pages += 1
+	if pages == 0:
+		problems.append("%s has no pages to flip" % what)
+
+
+func _note_offscreen(root: Node, what: String, problems: Array[String]) -> void:
+	var view := get_viewport().get_visible_rect().grow(1.0)
+	for c: Control in _all_of(root, "Control"):
+		if not c.is_visible_in_tree() or c.size == Vector2.ZERO:
+			continue
+		var r := c.get_global_rect()
+		if not view.encloses(r):
+			problems.append("%s: %s at %s" % [what, c.get_class(), r])
+			return
+
+
+func _all_of(root: Node, type: String) -> Array:
+	var out := []
+	for child in root.get_children():
+		if child.is_queued_for_deletion():
+			continue
+		if child.is_class(type):
+			out.append(child)
+		out.append_array(_all_of(child, type))
+	return out
 
 
 func world_row_of(game: Node2D, player: Player) -> int:

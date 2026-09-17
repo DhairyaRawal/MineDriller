@@ -22,27 +22,11 @@ func _ready() -> void:
 	layer = 24
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
-	var bg := ColorRect.new()
-	bg.color = UIKit.BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 40)
-	margin.add_theme_constant_override("margin_bottom", 28)
-	add_child(margin)
-
-	var col := UIKit.vbox(16)
-	margin.add_child(col)
-	col.add_child(UIKit.title("MAP"))
+	var col := UIKit.screen(self, "MAP")
 	var legend := UIKit.label(
 		"Green = you.  Cyan = a discovered safe-spot depot.  Fog = unexplored.",
-		18, UIKit.TEXT_DIM)
+		14, UIKit.TEXT_DIM)
 	legend.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	legend.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(legend)
 
 	var canvas := MapCanvas.new()
@@ -55,14 +39,26 @@ func _ready() -> void:
 	# it one on the next layout pass, so redraw once that actually happens.
 	canvas.resized.connect(canvas.queue_redraw)
 
-	var close := UIKit.button("CLOSE", 32, true)
-	close.pressed.connect(func() -> void:
-		get_tree().paused = false
-		closed.emit()
-		queue_free())
-	col.add_child(close)
+	var foot := UIKit.footer()
+	col.add_child(foot)
+	var close := UIKit.action_button("CLOSE")
+	close.pressed.connect(_close)
+	foot.add_child(close)
 
 	get_tree().paused = true
+
+
+func _close() -> void:
+	get_tree().paused = false
+	closed.emit()
+	queue_free()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Esc closes the map rather than falling through to the pause menu.
+	if event.is_action_pressed("pause"):
+		get_viewport().set_input_as_handled()
+		_close()
 
 
 class MapCanvas:

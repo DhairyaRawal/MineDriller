@@ -24,25 +24,23 @@ func _init(reason: String) -> void:
 	layer = 25
 	var content := UIKit.modal(self, "RESCUED!")
 
-	var reason_label := UIKit.label(reason, 28)
-	reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	reason_label.custom_minimum_size = Vector2(520, 0)
+	var reason_label := UIKit.wrapped(reason, 21)
+	reason_label.custom_minimum_size = Vector2(460, 0)
 	reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(reason_label)
 
 	var penalty := UIKit.label(
 		"You lost the ore you were carrying,\nbut your money and upgrades are all safe.",
-		24, UIKit.TEXT_DIM)
+		17, UIKit.TEXT_DIM)
 	penalty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(penalty)
 
-	var tip := UIKit.label(TIPS[randi() % TIPS.size()], 22, UIKit.ETHER)
-	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tip.custom_minimum_size = Vector2(520, 0)
+	var tip := UIKit.wrapped(TIPS[randi() % TIPS.size()], 16, UIKit.ETHER)
+	tip.custom_minimum_size = Vector2(460, 0)
 	tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(tip)
 
-	var btn := UIKit.button("TRY AGAIN", 30, true)
+	var btn := UIKit.action_button("TRY AGAIN")
 	btn.pressed.connect(func() -> void:
 		respawn_requested.emit()
 		queue_free())

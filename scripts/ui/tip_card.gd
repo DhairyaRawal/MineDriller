@@ -20,26 +20,25 @@ func _ready() -> void:
 	var tip: Dictionary = Balance.tips.get(_tip_id, {})
 	var content := UIKit.modal(self, String(tip.get("title", "Tip")))
 
-	var category := UIKit.label(String(tip.get("category", "")).to_upper(), 18,
+	var category := UIKit.label(String(tip.get("category", "")).to_upper(), 14,
 		UIKit.BAD if tip.get("category", "") == "Dangers" else UIKit.TEXT_DIM)
 	category.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(category)
 
-	var body := UIKit.label(String(tip.get("body", "")), 24)
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(560, 0)
+	var body := UIKit.wrapped(String(tip.get("body", "")), 18)
+	body.custom_minimum_size = Vector2(480, 0)
 	content.add_child(body)
 
 	# TipCard only ever opens from a floating '?', which retires once read.
 	var note := UIKit.label(
 		"You won't see this ? again. Re-read it any time from the pause menu's GUIDE.",
-		17, UIKit.TEXT_DIM)
+		13, UIKit.TEXT_DIM)
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.custom_minimum_size = Vector2(560, 0)
+	note.custom_minimum_size = Vector2(480, 0)
 	content.add_child(note)
 
-	var ok := UIKit.button("GOT IT", 28, true)
+	var ok := UIKit.action_button("GOT IT")
 	ok.pressed.connect(dismiss)
 	content.add_child(ok)
 

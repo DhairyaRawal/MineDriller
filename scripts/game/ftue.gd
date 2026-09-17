@@ -166,12 +166,12 @@ func _show_complete_card() -> void:
 		"That's the whole loop: drill, collect ore, get back to the surface, "
 		+ "upgrade, and go deeper.\n\nYour Drill Bit Lv 2 comes with you. The real "
 		+ "Earth is far bigger - and the rock gets much harder the deeper you go.",
-		24, UIKit.TEXT_DIM)
+		18, UIKit.TEXT_DIM)
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(560, 0)
+	body.custom_minimum_size = Vector2(480, 0)
 	content.add_child(body)
 
-	var go := UIKit.button("START DRILLING", 30, true)
+	var go := UIKit.action_button("START DRILLING", true, 260)
 	go.pressed.connect(func() -> void:
 		GameState.finish_ftue()
 		get_tree().paused = false

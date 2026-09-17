@@ -10,11 +10,15 @@ extends CanvasLayer
 ##   the fastest way to make them stop opening the log.
 ## - Entirely optional and player-initiated, which keeps it autonomy-supportive
 ##   rather than a homework gate on the shop.
+##
+## Landscape layout: a centred reading column rather than full screen width,
+## with the answers side by side instead of a stack of tall buttons.
 
 signal closed
 
 const REWARD_ETHER := 1
 const QUESTIONS := 3
+const COLUMN_WIDTH := 860
 
 var _pool: Array = []
 var _index := 0
@@ -25,33 +29,21 @@ var _progress: Label
 
 func _ready() -> void:
 	layer = 26
-	var bg := ColorRect.new()
-	bg.color = UIKit.BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 46)
-	margin.add_theme_constant_override("margin_bottom", 28)
-	add_child(margin)
-
-	var col := UIKit.vbox(16)
-	margin.add_child(col)
-	col.add_child(UIKit.title("GEOLOGIST'S LOG"))
-	_progress = UIKit.label("", 20, UIKit.TEXT_DIM)
+	var col := UIKit.screen(self, "GEOLOGIST'S LOG")
+	_progress = UIKit.label("", 15, UIKit.TEXT_DIM)
 	_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_progress)
 
-	_body = UIKit.vbox(14)
-	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_child(_body)
+	var center := CenterContainer.new()
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(center)
+	_body = UIKit.vbox(16)
+	_body.custom_minimum_size = Vector2(COLUMN_WIDTH, 0)
+	center.add_child(_body)
 
 	_build_pool()
 	if _pool.is_empty():
-		_show_empty(col)
+		_show_empty()
 	else:
 		_ask()
 
@@ -74,21 +66,26 @@ func _build_pool() -> void:
 		_pool.resize(QUESTIONS)
 
 
-func _show_empty(col: VBoxContainer) -> void:
-	var msg := UIKit.label(
+func _show_empty() -> void:
+	var msg := UIKit.wrapped(
 		"Go and mine something first!\n\nEvery new ore you dig up adds pages to your log, and every page is worth ether.",
-		24, UIKit.TEXT_DIM)
-	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		20, UIKit.TEXT_DIM)
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_body.add_child(msg)
-	var back := UIKit.button("BACK", 30, true)
+	var back := UIKit.action_button("BACK")
 	back.pressed.connect(_close)
-	col.add_child(back)
+	_body.add_child(back)
 
 
 func _clear_body() -> void:
 	for child in _body.get_children():
 		child.queue_free()
+
+
+func _centered(text: String, size: int, color := UIKit.TEXT) -> Label:
+	var l := UIKit.wrapped(text, size, color)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return l
 
 
 func _ask() -> void:
@@ -98,10 +95,8 @@ func _ask() -> void:
 	var entry: Dictionary = _pool[_index]
 	var q: Dictionary = entry["q"]
 
-	_body.add_child(UIKit.label(String(entry["subject"]), 20, UIKit.ACCENT))
-	var prompt := UIKit.label(String(q["q"]), 30)
-	prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_body.add_child(prompt)
+	_body.add_child(_centered(String(entry["subject"]), 16, UIKit.ACCENT))
+	_body.add_child(_centered(String(q["q"]), 26))
 
 	var options: Array = q["options"]
 	# Shuffle presentation so the answer is never in a predictable slot.
@@ -110,10 +105,14 @@ func _ask() -> void:
 		order.append(i)
 	order.shuffle()
 
+	var row := UIKit.hbox(12)
+	_body.add_child(row)
 	for slot: int in order:
-		var btn := UIKit.button(String(options[slot]), 26)
+		var btn := UIKit.button(String(options[slot]), 18)
+		btn.custom_minimum_size.y = 52
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.pressed.connect(func() -> void: _answer(slot == int(q["answer"]), q))
-		_body.add_child(btn)
+		row.add_child(btn)
 
 
 func _answer(is_right: bool, q: Dictionary) -> void:
@@ -123,31 +122,22 @@ func _answer(is_right: bool, q: Dictionary) -> void:
 		GameState.add_ether(REWARD_ETHER)
 		AudioManager.play("upgrade")
 		SettingsManager.vibrate(45)
-		var head := UIKit.label("Correct!  +%d ether" % REWARD_ETHER, 34, UIKit.GOOD)
-		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_body.add_child(head)
+		_body.add_child(_centered("Correct!  +%d ether" % REWARD_ETHER, 30, UIKit.GOOD))
 	else:
 		AudioManager.play("click", -4.0, 0.7)
-		var head := UIKit.label("Not quite!", 34, UIKit.ACCENT)
-		head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_body.add_child(head)
-		var right := UIKit.label(
-			"Answer: %s" % String(q["options"][int(q["answer"])]), 26)
-		right.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_body.add_child(right)
+		_body.add_child(_centered("Not quite!", 30, UIKit.ACCENT))
+		_body.add_child(_centered(
+			"Answer: %s" % String(q["options"][int(q["answer"])]), 20))
 
 	# The explanation is the actual teaching, so it shows either way.
 	var note := String(q.get("note", ""))
 	if note != "":
 		var panel := UIKit.panel(Color(0.18, 0.16, 0.24, 1.0), 14)
 		_body.add_child(panel)
-		var note_label := UIKit.label(note, 22, UIKit.TEXT)
-		note_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		note_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		panel.add_child(note_label)
+		panel.add_child(_centered(note, 18))
 
-	var next := UIKit.button(
-		"NEXT" if _index + 1 < _pool.size() else "FINISH", 30, true)
+	var next := UIKit.action_button(
+		"NEXT" if _index + 1 < _pool.size() else "FINISH")
 	next.pressed.connect(_advance)
 	_body.add_child(next)
 
@@ -163,9 +153,7 @@ func _advance() -> void:
 func _finish() -> void:
 	_clear_body()
 	_progress.text = ""
-	var head := UIKit.label("%d / %d correct" % [_correct, _pool.size()], 40, UIKit.GOOD)
-	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_body.add_child(head)
+	_body.add_child(_centered("%d / %d correct" % [_correct, _pool.size()], 34, UIKit.GOOD))
 
 	# Effort-focused praise, not ability praise ("you are so clever" teaches
 	# kids to avoid hard things; "you worked that out" does the opposite).
@@ -174,12 +162,9 @@ func _finish() -> void:
 		msg = "Every single one. You have really been paying attention down there!"
 	elif _correct == 0:
 		msg = "Tricky set! Read the cards in your Codex and try again any time."
-	var body := UIKit.label(msg, 24, UIKit.TEXT_DIM)
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_body.add_child(body)
+	_body.add_child(_centered(msg, 19, UIKit.TEXT_DIM))
 
-	var back := UIKit.button("BACK TO THE SURFACE", 28, true)
+	var back := UIKit.action_button("BACK TO THE SURFACE", true, 280)
 	back.pressed.connect(_close)
 	_body.add_child(back)
 	GameState.unlock_achievement("log_keeper")
@@ -190,3 +175,9 @@ func _finish() -> void:
 func _close() -> void:
 	closed.emit()
 	queue_free()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pause"):
+		get_viewport().set_input_as_handled()
+		_close()

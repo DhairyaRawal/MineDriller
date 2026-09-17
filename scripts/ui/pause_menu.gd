@@ -35,25 +35,26 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	var content := UIKit.modal(self, "PAUSED")
 
-	var columns := UIKit.hbox(32)
+	var columns := UIKit.hbox(28)
 	content.add_child(columns)
 
-	var left := UIKit.vbox(18)
-	left.custom_minimum_size = Vector2(460, 0)
+	var left := UIKit.vbox(12)
+	left.custom_minimum_size = Vector2(400, 0)
 	columns.add_child(left)
 	left.add_child(SettingsPanel.new())
+	left.add_child(UIKit.spacer())
 
-	var resume := UIKit.button("RESUME", 32, true)
+	var resume := UIKit.button("RESUME", 22, true)
 	resume.pressed.connect(_on_resume)
 	left.add_child(resume)
 
-	var row := UIKit.hbox(12)
+	var row := UIKit.hbox(10)
 	left.add_child(row)
-	var guide := UIKit.button("GUIDE", 26)
+	var guide := UIKit.button("GUIDE", 17)
 	guide.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	guide.pressed.connect(func() -> void: add_child(GuideScreen.new()))
 	row.add_child(guide)
-	var quit := UIKit.button("QUIT TO MENU", 26)
+	var quit := UIKit.button("QUIT TO MENU", 17)
 	quit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	quit.pressed.connect(func() -> void:
 		get_tree().paused = false
@@ -65,21 +66,21 @@ func _ready() -> void:
 
 
 func _controls_column() -> Control:
-	var col := UIKit.vbox(10)
-	col.custom_minimum_size = Vector2(420, 0)
-	col.add_child(UIKit.label("CONTROLS", 26, UIKit.ACCENT))
+	var col := UIKit.vbox(8)
+	col.custom_minimum_size = Vector2(400, 0)
+	col.add_child(UIKit.label("CONTROLS", UIKit.FONT_HEADING, UIKit.ACCENT))
 
 	var grid := GridContainer.new()
 	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 24)
-	grid.add_theme_constant_override("v_separation", 9)
+	grid.add_theme_constant_override("h_separation", 22)
+	grid.add_theme_constant_override("v_separation", 7)
 	col.add_child(grid)
 
 	for entry: Array in CONTROLS:
-		grid.add_child(UIKit.label(String(entry[0]), 20, UIKit.TEXT_DIM))
+		grid.add_child(UIKit.label(String(entry[0]), 16, UIKit.TEXT_DIM))
 		var how: Variant = entry[1]
 		var keys := keys_text(how) if how is Array else String(how)
-		grid.add_child(UIKit.label(keys, 20))
+		grid.add_child(UIKit.label(keys, 16))
 	return col
 
 

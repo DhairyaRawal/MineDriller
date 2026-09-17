@@ -5,8 +5,16 @@ extends CanvasLayer
 ## look something up before they've run into it, or re-read one afterwards.
 ## Same data as the '?' bubbles (data/tips.json), grouped by category in file
 ## order.
+##
+## Landscape layout: every tip title is visible at once on the left, grouped by
+## category, and the selected tip reads on the right. Sixteen full tips in one
+## column was a long scroll; this is one click.
 
 signal closed
+
+var _page_title: Label
+var _page_category: Label
+var _page_body: Label
 
 
 func _ready() -> void:
@@ -14,63 +22,82 @@ func _ready() -> void:
 	# Opened from the pause menu, so the tree is already paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
-	var bg := ColorRect.new()
-	bg.color = UIKit.BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	for side in ["margin_left", "margin_right"]:
-		margin.add_theme_constant_override(side, 80)
-	margin.add_theme_constant_override("margin_top", 32)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	add_child(margin)
-
-	var col := UIKit.vbox(14)
-	margin.add_child(col)
-	col.add_child(UIKit.title("GUIDE", 40))
+	var col := UIKit.screen(self, "GUIDE")
 	# Deliberately does NOT mark anything read: this screen shows every tip at
 	# once, so treating it as reading would silently retire every '?' in the
 	# game, including ones for things the player hasn't met yet.
 	var sub := UIKit.label(
 		"Each of these first appears as a ? over the thing itself when you're near it, "
-		+ "and retires once you've read it. They all stay here for good.", 18, UIKit.TEXT_DIM)
+		+ "and retires once you've read it. They all stay here for good.", 14, UIKit.TEXT_DIM)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(sub)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(scroll)
-	var list := UIKit.vbox(10)
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
+	var split := UIKit.hbox(24)
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(split)
 
+	var index := UIKit.vbox(6)
+	index.custom_minimum_size = Vector2(560, 0)
+	split.add_child(index)
+
+	var page_panel := UIKit.panel(Color(0.15, 0.13, 0.20, 0.95), 14)
+	page_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.add_child(page_panel)
+	var page := UIKit.vbox(10)
+	page_panel.add_child(page)
+	_page_category = UIKit.label("", 14, UIKit.TEXT_DIM)
+	page.add_child(_page_category)
+	_page_title = UIKit.label("", 30, UIKit.ACCENT)
+	page.add_child(_page_title)
+	_page_body = UIKit.wrapped("", 20)
+	page.add_child(_page_body)
+
+	var group := ButtonGroup.new()
+	var first := ""
 	for category in Balance.tip_categories:
-		var header := UIKit.label(String(category).to_upper(), 24,
-			UIKit.BAD if category == "Dangers" else UIKit.ACCENT)
-		list.add_child(header)
+		index.add_child(UIKit.label(String(category).to_upper(), 15,
+			UIKit.BAD if category == "Dangers" else UIKit.ACCENT))
+		var flow := HFlowContainer.new()
+		flow.add_theme_constant_override("h_separation", 8)
+		flow.add_theme_constant_override("v_separation", 8)
+		index.add_child(flow)
 		for id: String in Balance.tips:
 			var tip: Dictionary = Balance.tips[id]
-			if tip.get("category", "") == category:
-				list.add_child(_row(tip))
+			if tip.get("category", "") != category:
+				continue
+			var b := UIKit.list_button(String(tip["title"]), group)
+			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			b.pressed.connect(func() -> void: _show(id))
+			flow.add_child(b)
+			if first == "":
+				first = id
+				b.button_pressed = true
+		index.add_child(_gap(4))
 
-	var back := UIKit.button("BACK", 28, true)
+	if first != "":
+		_show(first)
+
+	var foot := UIKit.footer()
+	col.add_child(foot)
+	var back := UIKit.action_button("BACK")
 	back.pressed.connect(_close)
-	col.add_child(back)
+	foot.add_child(back)
 
 
-func _row(tip: Dictionary) -> PanelContainer:
-	var panel := UIKit.panel()
-	var box := UIKit.vbox(4)
-	panel.add_child(box)
-	box.add_child(UIKit.label(String(tip["title"]), 24))
-	var body := UIKit.label(String(tip["body"]), 19, UIKit.TEXT_DIM)
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(body)
-	return panel
+func _gap(height: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, height)
+	return c
+
+
+func _show(id: String) -> void:
+	var tip: Dictionary = Balance.tips[id]
+	var category := String(tip.get("category", ""))
+	_page_category.text = category.to_upper()
+	_page_category.add_theme_color_override("font_color",
+		UIKit.BAD if category == "Dangers" else UIKit.TEXT_DIM)
+	_page_title.text = String(tip["title"])
+	_page_body.text = String(tip["body"])
 
 
 func _close() -> void:

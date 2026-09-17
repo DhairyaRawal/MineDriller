@@ -3,55 +3,40 @@ extends CanvasLayer
 ## CosmeticsScreen: the ether store. Ether is earned from Ruby / Black Opal
 ## (per the GDD) and spends ONLY here — cosmetics never touch drill stats, so
 ## the economy stays honest and the shop never becomes pay-to-win.
+##
+## Landscape layout: skins and trails side by side, so both lists are fully
+## visible without scrolling.
 
 signal closed
 
 var _ether_label: Label
-var _list: VBoxContainer
+var _list: HBoxContainer
 
 
 func _ready() -> void:
 	layer = 25
-	var bg := ColorRect.new()
-	bg.color = UIKit.BG
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	var col := UIKit.screen(self, "DRILL WORKSHOP")
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 40)
-	margin.add_theme_constant_override("margin_bottom", 28)
-	add_child(margin)
-
-	var col := UIKit.vbox(16)
-	margin.add_child(col)
-	col.add_child(UIKit.title("DRILL WORKSHOP"))
-
-	_ether_label = UIKit.label("", 30, UIKit.ETHER)
+	_ether_label = UIKit.label("", 22, UIKit.ETHER)
 	_ether_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_ether_label)
 
 	var hint := UIKit.label("Ether comes from Rubies and Black Opals. Looks only - never stats.",
-		18, UIKit.TEXT_DIM)
+		14, UIKit.TEXT_DIM)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(hint)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(scroll)
-	_list = UIKit.vbox(14)
-	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_list)
+	_list = UIKit.hbox(24)
+	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(_list)
 
-	var close := UIKit.button("BACK", 30, true)
+	var foot := UIKit.footer()
+	col.add_child(foot)
+	var close := UIKit.action_button("BACK")
 	close.pressed.connect(func() -> void:
 		closed.emit()
 		queue_free())
-	col.add_child(close)
+	foot.add_child(close)
 
 	_rebuild()
 
@@ -60,13 +45,15 @@ func _rebuild() -> void:
 	for child in _list.get_children():
 		child.queue_free()
 
-	_list.add_child(UIKit.label("DRILL SKINS", 24, UIKit.ACCENT))
-	for id: String in Balance.cosmetics["drill_skins"]:
-		_list.add_child(_make_row("drill_skin", id, Balance.cosmetics["drill_skins"][id]))
-
-	_list.add_child(UIKit.label("DRILL TRAILS", 24, UIKit.ACCENT))
-	for id: String in Balance.cosmetics["trails"]:
-		_list.add_child(_make_row("trail", id, Balance.cosmetics["trails"][id]))
+	for section: Array in [["DRILL SKINS", "drill_skin", "drill_skins"],
+			["DRILL TRAILS", "trail", "trails"]]:
+		var column := UIKit.vbox(8)
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_list.add_child(column)
+		column.add_child(UIKit.label(String(section[0]), UIKit.FONT_HEADING, UIKit.ACCENT))
+		var table: Dictionary = Balance.cosmetics[section[2]]
+		for id: String in table:
+			column.add_child(_make_row(String(section[1]), id, table[id]))
 
 	_refresh()
 
@@ -75,8 +62,9 @@ func _make_row(category: String, id: String, info: Dictionary) -> PanelContainer
 	var owned := _is_owned(category, id)
 	var equipped := _is_equipped(category, id)
 
-	var panel := UIKit.panel()
-	var row := UIKit.hbox(16)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.flat_style(UIKit.PANEL, 10, 14, 7))
+	var row := UIKit.hbox(12)
 	panel.add_child(row)
 
 	# Skins get a live preview of the actual in-game sprite.
@@ -85,7 +73,7 @@ func _make_row(category: String, id: String, info: Dictionary) -> PanelContainer
 		var path := "res://assets/textures/player_%s.png" % id
 		if ResourceLoader.exists(path):
 			preview.texture = load(path)
-		preview.custom_minimum_size = Vector2(72, 72)
+		preview.custom_minimum_size = Vector2(44, 44)
 		preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		preview.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -93,22 +81,24 @@ func _make_row(category: String, id: String, info: Dictionary) -> PanelContainer
 			preview.modulate = Color(0.35, 0.35, 0.40)   # silhouette when locked
 		row.add_child(preview)
 
-	var info_col := UIKit.vbox(4)
+	var info_col := UIKit.vbox(0)
 	info_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_col.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(info_col)
 
-	var title_row := UIKit.hbox(12)
+	var title_row := UIKit.hbox(10)
 	info_col.add_child(title_row)
-	title_row.add_child(UIKit.label(String(info["name"]), 28))
+	title_row.add_child(UIKit.label(String(info["name"]), 18))
 	if equipped:
-		title_row.add_child(UIKit.label("EQUIPPED", 18, UIKit.GOOD))
+		var tag := UIKit.label("EQUIPPED", 13, UIKit.GOOD)
+		tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		title_row.add_child(tag)
 
-	var desc := UIKit.label(String(info["desc"]), 19, UIKit.TEXT_DIM)
-	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info_col.add_child(desc)
+	info_col.add_child(UIKit.wrapped(String(info["desc"]), 14, UIKit.TEXT_DIM))
 
-	var action := UIKit.button("", 24, not owned)
-	action.custom_minimum_size = Vector2(190, 92)
+	var action := UIKit.button("", 16, not owned)
+	action.custom_minimum_size = Vector2(104, 38)
+	action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	action.pressed.connect(func() -> void: _on_row_pressed(category, id))
 	action.set_meta("category", category)
 	action.set_meta("id", id)
@@ -146,28 +136,28 @@ func _on_row_pressed(category: String, id: String) -> void:
 
 func _refresh() -> void:
 	_ether_label.text = "%d ether" % GameState.ether
-	for panel in _list.get_children():
-		if panel is not PanelContainer:
-			continue
-		for button in _find_buttons(panel):
-			var category := String(button.get_meta("category"))
-			var id := String(button.get_meta("id"))
-			var info := _info(category, id)
-			var cost := int(info["cost"])
-			if _is_equipped(category, id):
-				button.text = "ON"
-				button.disabled = true
-			elif _is_owned(category, id):
-				button.text = "EQUIP"
-				button.disabled = false
-			else:
-				button.text = "%d E" % cost
-				button.disabled = GameState.ether < cost
+	for button in _find_buttons(_list):
+		var category := String(button.get_meta("category"))
+		var id := String(button.get_meta("id"))
+		var info := _info(category, id)
+		var cost := int(info["cost"])
+		if _is_equipped(category, id):
+			button.text = "ON"
+			button.disabled = true
+		elif _is_owned(category, id):
+			button.text = "EQUIP"
+			button.disabled = false
+		else:
+			button.text = "%d E" % cost
+			button.disabled = GameState.ether < cost
 
 
 func _find_buttons(node: Node) -> Array[Button]:
 	var out: Array[Button] = []
 	for child in node.get_children():
+		# Rows queued for deletion by _rebuild are still children this frame.
+		if child.is_queued_for_deletion():
+			continue
 		if child is Button and child.has_meta("id"):
 			out.append(child)
 		else:
