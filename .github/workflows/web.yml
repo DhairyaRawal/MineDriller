@@ -1,0 +1,134 @@
+name: Web build
+
+# Exports the game for the browser with Godot, publishes it to GitHub Pages,
+# and runs the headless test suite.
+#
+# Building in CI rather than locally is deliberate: the Godot binary on the
+# development machine won't launch from the tooling used to work on this
+# project, so this workflow is also the first place the tests actually run.
+#
+# Hosting works because the Web export preset has thread_support=false. A
+# threaded web build needs SharedArrayBuffer, which needs COOP/COEP response
+# headers -- and GitHub Pages can't send custom headers.
+
+on:
+  push:
+    branches: [main, fix/water-free-flowing-render]
+  workflow_dispatch:
+
+concurrency:
+  group: web-build
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7.1"
+
+jobs:
+  # Informational: deploy does NOT wait on this. The suite was written without
+  # being runnable, so a failure here is as likely to be a wrong expectation as
+  # a broken game -- it shouldn't cost you the playable build. Check it anyway.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mkdir -p "$HOME/.local/bin"
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$HOME/.local/bin/godot"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # .godot/ is gitignored, so a fresh checkout has no import cache and no
+      # global class cache -- every `class_name` (FTUE, TipSystem, ...) would be
+      # an unknown identifier. Two passes, because the first can finish before
+      # the class cache is complete.
+      - name: Import project
+        run: |
+          godot --headless --import || true
+          godot --headless --import || true
+
+      - name: Run tests
+        run: godot --headless --path . res://tests/test_runner.tscn
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write   # push the built site to the gh-pages branch
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          mkdir -p "$HOME/.local/bin"
+          mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" "$HOME/.local/bin/godot"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Cache web export templates
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: godot-web-templates-${{ env.GODOT_VERSION }}
+
+      # The official bundle is 1.28 GB of every platform's templates. Keep only
+      # the web ones so the cache above stays tens of MB, not over a gigabyte.
+      - name: Install web export templates
+        run: |
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          if [ ! -f "$dest/web_nothreads_release.zip" ]; then
+            curl -fsSL -o templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+            unzip -q templates.tpz
+            mkdir -p "$dest"
+            mv templates/* "$dest/"
+            find "$dest" -type f ! -name 'web*' ! -name 'version.txt' -delete
+            rm -rf templates templates.tpz
+          fi
+          ls -la "$dest"
+
+      - name: Import project
+        run: |
+          godot --headless --import || true
+          godot --headless --import || true
+
+      - name: Export for web
+        run: |
+          mkdir -p build/web
+          godot --headless --export-release "Web" build/web/index.html
+          # Godot can print an error and still exit 0; make a missing build fail.
+          test -f build/web/index.html
+          test -f build/web/index.wasm
+          test -f build/web/index.pck
+          # Tells Pages to serve files as-is instead of running Jekyll over them.
+          touch build/web/.nojekyll
+          ls -la build/web
+
+      # A fresh single-commit snapshot each deploy, force-pushed: gh-pages only
+      # ever holds the latest build, so there's no history worth keeping there.
+      - name: Publish to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd build/web
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Web build from ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Summary
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "## Web build published"
+            echo ""
+            echo "https://${owner}.github.io/${repo}/"
+            echo ""
+            echo "If that 404s, enable Pages once: **Settings → Pages → Deploy from a branch → gh-pages / (root)**."
+          } >> "$GITHUB_STEP_SUMMARY"
