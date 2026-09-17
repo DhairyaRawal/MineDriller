@@ -146,7 +146,7 @@ func _build_top() -> void:
 	row1.add_child(_hull_box)
 	# Rocket ammo lives in the status strip now that the firing pad is gone:
 	# on web it's fired with R/Q, so this is a readout, not a control.
-	_rocket_label = UIKit.legible(UIKit.label("↗ 5", 19, UIKit.ETHER))
+	_rocket_label = UIKit.legible(UIKit.label("Rockets 5", 19, UIKit.ETHER))
 	_rocket_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row1.add_child(_rocket_label)
 	# Always available (unlike SHOP/DEPOT, which only appear in context) --
@@ -256,6 +256,9 @@ func _build_context_buttons() -> void:
 	_objective_panel.offset_top = -66.0
 	_objective_panel.offset_bottom = -20.0
 	_objective_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# A step that wraps to two lines grows the panel upward, not off the bottom
+	# of the screen.
+	_objective_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_objective_panel.visible = false
 	_objective_label = UIKit.legible(UIKit.label("", 17, UIKit.ACCENT), 3)
 	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -340,7 +343,7 @@ func set_at_surface(at_surface: bool) -> void:
 ## Greys out at zero so an empty bay reads at a glance rather than only when a
 ## press fails.
 func _on_rockets_changed(count: int, max_count: int) -> void:
-	_rocket_label.text = "↗ %d/%d" % [count, max_count]
+	_rocket_label.text = "Rockets %d/%d" % [count, max_count]
 	_rocket_label.modulate = Color.WHITE if count > 0 else Color(1, 1, 1, 0.45)
 
 

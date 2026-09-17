@@ -20,6 +20,7 @@ func _ready() -> void:
 	_test_ftue()
 	_test_tips()
 	_test_controls()
+	_test_font_coverage()
 	_test_save_roundtrip()
 	_test_heat_model()
 	_test_terrain_physics()
@@ -463,7 +464,7 @@ func _test_controls() -> void:
 	_check("P" in pause_keys and "Esc" in pause_keys,
 		"pause is on both P and Esc (P matters on web, where Esc can exit fullscreen): '%s'"
 			% pause_keys)
-	_check(PauseMenu.keys_text(["move_left", "move_right"]) == "A / D   or   ← / →",
+	_check(PauseMenu.keys_text(["move_left", "move_right"]) == "A / D   or   Left / Right",
 		"left/right bindings are paired, not dumped as one list")
 
 
@@ -659,6 +660,52 @@ func _test_water_sim() -> void:
 			break
 	_check(drained, "woken water pours down the new shaft")
 	w.queue_free()
+
+
+## The web build has no system fonts to fall back on, so a character missing
+## from the game font draws as an empty box -- arrows did, all through the
+## controls list. Checks every piece of player-facing text the game has as data.
+func _test_font_coverage() -> void:
+	var texts: Array[String] = []
+	_collect_strings(Balance.data, texts)
+	_collect_strings(Balance.codex, texts)
+	_collect_strings(Balance.tips, texts)
+	for entry: Array in PauseMenu.CONTROLS:
+		texts.append(String(entry[0]))
+		texts.append(PauseMenu.keys_text(entry[1]) if entry[1] is Array else String(entry[1]))
+	GameState.from_dict({})
+	var ftue := FTUE.new()
+	for step in 5:
+		texts.append(ftue._objective_text(step, 50))
+	ftue.free()
+
+	var font := ThemeDB.fallback_font
+	var missing := {}
+	for text in texts:
+		for i in text.length():
+			var code := text.unicode_at(i)
+			if code >= 32 and not font.has_char(code):
+				missing[String.chr(code)] = text.left(40)
+	var report: Array[String] = []
+	for ch: String in missing:
+		report.append("'%s' (U+%04X) in \"%s\"" % [ch, ch.unicode_at(0), missing[ch]])
+	_check(missing.is_empty(), "all player-facing text is drawable by the game font "
+		+ "; ".join(PackedStringArray(report)))
+
+
+## Every string value under `v`, skipping "_comment"-style keys, which are
+## notes for editors and never shown.
+func _collect_strings(v: Variant, out: Array[String]) -> void:
+	if v is String:
+		out.append(v)
+	elif v is Array:
+		for item in v:
+			_collect_strings(item, out)
+	elif v is Dictionary:
+		for key in v:
+			if String(key).begins_with("_"):
+				continue
+			_collect_strings(v[key], out)
 
 
 ## The web layout's promise: every page fits a 1280x720 screen with nothing to

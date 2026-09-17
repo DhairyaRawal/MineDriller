@@ -39,8 +39,8 @@ func _ready() -> void:
 	var columns := UIKit.hbox(20)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(columns)
-	_cargo_list = _column(columns, "CARGO  →  deposit")
-	_depot_list = _column(columns, "DEPOT  →  withdraw")
+	_cargo_list = _column(columns, "IN YOUR CARGO")
+	_depot_list = _column(columns, "BANKED IN THIS DEPOT")
 
 	var foot := UIKit.footer()
 	col.add_child(foot)

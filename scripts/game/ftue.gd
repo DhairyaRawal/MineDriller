@@ -131,12 +131,12 @@ func _objective_text(step: int, cost: int) -> String:
 		Step.DRILL:
 			if GameState.money > 0:
 				return n + "Not enough yet - drill back down for more ore"
-			return n + "Hold  S / ↓  to drill down"
+			return n + "Hold  S  or  Down  to drill down"
 		Step.COLLECT:
 			return n + "Collect ore worth %d$     (%d / %d)" % [
 				cost, mini(GameState.money + GameState.run_earn_preview, cost), cost]
 		Step.SURFACE:
-			return n + "Enough ore! Get back up: hold  ↑ + ← / →  into a wall to carve a ramp, or press  R  for a rocket"
+			return n + "Enough ore! Get back up: hold  W + A / D  into a wall to carve a ramp, or press  R  for a rocket"
 		Step.UPGRADE:
 			# Worded to hold wherever the player is: the SHOP button only shows
 			# at the surface, and this text isn't re-rendered as they move.

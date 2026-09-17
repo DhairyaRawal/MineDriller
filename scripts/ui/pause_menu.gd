@@ -15,13 +15,13 @@ signal quit_to_menu
 ## whose keys are read from the live bindings -- so this panel can never
 ## disagree with what the keys actually do -- or, for combos and mouse actions
 ## that aren't a single binding, a literal string.
-## Two-action rows (left/right) are paired by binding order: "A / D  or  ← / →".
+## Two-action rows (left/right) are paired by binding order: "A / D  or  Left / Right".
 const CONTROLS := [
 	["Move", ["move_left", "move_right"]],
 	["Drill down", ["move_down"]],
 	["Jump", ["move_up"]],
 	["Drill sideways", "push into a wall"],
-	["Carve a ramp up", "hold  ↑  + a direction into a wall"],
+	["Carve a ramp up", "hold  W / Up  + a direction into a wall"],
 	["Escape rocket", ["fire_rocket"]],
 	["Open a depot", ["interact"]],
 	["Read nearest tip", ["show_tip"]],
@@ -110,16 +110,19 @@ static func _action_keys(action: String) -> Array[String]:
 	return names
 
 
+## Arrow keys are spelled out, not drawn as arrow characters: the web build
+## has no system fonts to fall back on, and the game font has no arrows, so
+## they rendered as empty boxes.
 static func _key_name(code: Key) -> String:
 	match code:
 		KEY_LEFT:
-			return "←"
+			return "Left"
 		KEY_RIGHT:
-			return "→"
+			return "Right"
 		KEY_UP:
-			return "↑"
+			return "Up"
 		KEY_DOWN:
-			return "↓"
+			return "Down"
 		KEY_ESCAPE:
 			return "Esc"
 	return OS.get_keycode_string(code)
